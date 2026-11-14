@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import { AlertTriangle, CheckCircle2, Clock, Loader2 } from "lucide-react";
 import { confirmAction, payAction, recheckAction } from "@/lib/actions/checkout";
 import { money, type Price } from "@/lib/format";
@@ -81,6 +81,18 @@ export function PayPanel() {
   return (
     <div className="space-y-3">
       {sameChoice && <StatusBox view={v} paid={paid} />}
+      {sameChoice && (v.status === "ok" || v.status === "changed") && v.secondsLeft != null && (
+        <Countdown
+          key={session!.ref}
+          seconds={v.secondsLeft}
+          onExpire={() =>
+            setSession({
+              ...session!,
+              view: { ...v, status: "expired", title: "Tiden för priset har gått ut", message: "Vi håller ett pris i högst 20 minuter. Kontrollera priset igen för att fortsätta.", canPay: false, secondsLeft: 0 },
+            })
+          }
+        />
+      )}
       {!sameChoice && <p className="text-xs text-muted">Du har ändrat transfer. Vi kontrollerar priset igen när du går vidare.</p>}
       {Object.keys(errors).length > 0 && <p className="text-xs font-bold text-danger">Kontrollera resenärsuppgifterna: {Object.keys(errors).length} fält behöver rättas.</p>}
 
@@ -156,10 +168,47 @@ function StatusBox({ view: v, paid }: { view: Session["view"]; paid: boolean }) 
             </p>
           ))}
       <p className={v.status === "ok" ? "text-ink/80" : ""}>{v.message}</p>
-      {v.status === "ok" && !paid && v.expiresAt && <p className="text-xs text-ink/70">Vi håller priset till kl {new Date(v.expiresAt).toLocaleTimeString("sv-SE", { hour: "2-digit", minute: "2-digit" })}.</p>}
       {v.status === "ok" && paid && (
         <p className="text-ink/80">Resenärsuppgifterna är kompletta. Det här är en förhandsversion: betalning är inte påslagen, inget dras och inget bokas.</p>
       )}
+    </div>
+  );
+}
+
+/**
+ * Time left on the price hold. Counts down from the seconds the server worked out (not the device
+ * clock), turns amber under 5 minutes, and at zero hands over to "Kontrollera priset igen".
+ */
+function Countdown({ seconds, onExpire }: { seconds: number; onExpire: () => void }) {
+  const [deadline] = useState(() => Date.now() + seconds * 1000);
+  const [left, setLeft] = useState(seconds);
+  useEffect(() => {
+    const t = setInterval(() => {
+      const s = Math.max(0, Math.round((deadline - Date.now()) / 1000));
+      setLeft(s);
+      if (s === 0) {
+        clearInterval(t);
+        onExpire();
+      }
+    }, 1000);
+    return () => clearInterval(t);
+  }, [deadline]); // eslint-disable-line react-hooks/exhaustive-deps
+  const mm = String(Math.floor(left / 60)).padStart(2, "0");
+  const ss = String(left % 60).padStart(2, "0");
+  const low = left < 300;
+  return (
+    <div className={cn("flex items-center justify-between gap-3 rounded-control px-3 py-2 text-sm", low ? "bg-[color-mix(in_srgb,var(--color-accent)_22%,white)]" : "bg-panel")}>
+      <span className="flex items-center gap-2">
+        <Clock className="size-4 shrink-0" aria-hidden />
+        {low ? "Slutför bokningen snart. Vi håller priset i" : "Vi håller priset i"}
+      </span>
+      {/* Announce only whole minutes to screen readers, not every second. */}
+      <span className="font-bold tabular-nums" aria-hidden>
+        {mm}:{ss}
+      </span>
+      <span className="sr-only" aria-live="polite">
+        {Math.ceil(left / 60)} minuter kvar
+      </span>
     </div>
   );
 }

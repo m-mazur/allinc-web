@@ -123,6 +123,8 @@ export type CheckoutView = {
   total: Price | null;
   previousTotal: Price | null;
   expiresAt: string | null;
+  /** Seconds the price is held from now, worked out on the server (so a wrong client clock can't skew it). */
+  secondsLeft: number | null;
   lines: CheckoutLine[];
   /** Where to go when something is sold out; null = stay (transfer). */
   soldOutHref: string | null;
@@ -157,7 +159,8 @@ export function mapCheckout(raw: RawCheckout, trip: Trip): CheckoutView {
     previousPrice: l.previousPrice ? { amount: l.previousPrice.amount, currency: l.previousPrice.currency } : null,
     changes: l.changes.map((c) => CHANGE_SV[c] ?? "Villkoren"),
   }));
-  const base = { total: { amount: raw.total.amount, currency: raw.total.currency }, previousTotal: null, expiresAt: raw.expiresAt, lines, soldOutHref: null };
+  const secondsLeft = Math.max(0, Math.round((Date.parse(raw.expiresAt) - Date.now()) / 1000));
+  const base = { total: { amount: raw.total.amount, currency: raw.total.currency }, previousTotal: null, expiresAt: raw.expiresAt, secondsLeft, lines, soldOutHref: null };
   switch (raw.status) {
     case "Ok":
       return {
@@ -196,10 +199,12 @@ function soldOutHref(raw: RawCheckout, trip: Trip): string | null {
   return `/resa/${ref}?slutsalt=${so.what === "flight" ? "flyg" : "rum"}`;
 }
 
+const EXPIRED_MESSAGE = "Vi håller ett pris i högst 20 minuter. Kontrollera priset igen för att fortsätta.";
+
 function problem(e: unknown): CheckoutView {
-  const empty = { total: null, previousTotal: null, expiresAt: null, lines: [], soldOutHref: null, canPay: false };
+  const empty = { total: null, previousTotal: null, expiresAt: null, secondsLeft: null, lines: [], soldOutHref: null, canPay: false };
   if (e === "expired" || (e instanceof ApiError && e.kind === "NotFound"))
-    return { ...empty, status: "expired", title: "Tiden för priset har gått ut", message: "Vi håller ett pris i 20 minuter. Kontrollera priset igen för att fortsätta." };
+    return { ...empty, status: "expired", title: "Tiden för priset har gått ut", message: EXPIRED_MESSAGE };
   if (e === "busy" || (e instanceof ApiError && e.kind === "TooManyChecks"))
     return { ...empty, status: "busy", title: "För många kontroller", message: "Vänta en stund och försök igen, eller gör en ny sökning." };
   return { ...empty, status: "cannotconfirm", title: "Vi kan inte bekräfta priset just nu", message: "Försök igen om en liten stund. Inget har bokats eller dragits." };

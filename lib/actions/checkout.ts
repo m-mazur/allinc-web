@@ -17,6 +17,7 @@ const expired = (): CheckoutOutcome => ({
     total: null,
     previousTotal: null,
     expiresAt: null,
+    secondsLeft: null,
     lines: [],
     soldOutHref: null,
     canPay: false,

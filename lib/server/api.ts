@@ -245,12 +245,75 @@ async function record(route: string, p: Params, body: unknown) {
   await writeFile(file, JSON.stringify(body));
 }
 
+/**
+ * Replay only: a recorded offer is for the default choice. Apply a room or flight swap the way the
+ * API does (selected = winning + the options' deltas), so swapping works offline too.
+ */
+function replaySwaps(offer: RawOffer, p: Params): RawOffer {
+  const room = typeof p.room === "string" ? offer.roomOptions.find((r) => r.optionId === p.room) : undefined;
+  const flight = typeof p.flight === "string" ? offer.flightOptions.find((f) => f.flightToken === p.flight) : undefined;
+  if (!room && !flight) return offer;
+  const o: RawOffer = structuredClone(offer);
+  const r = room ?? o.roomOptions.find((x) => x.isWinning)!;
+  const f = flight ?? o.flightOptions.find((x) => x.isWinning)!;
+  o.roomOptions = o.roomOptions.map((x) => ({ ...x, isSelected: x.optionId === r.optionId }));
+  o.flightOptions = o.flightOptions.map((x) => ({ ...x, isSelected: x.flightToken === f.flightToken }));
+  const delta = r.delta.amount + f.delta.amount;
+  o.selected = {
+    ...o.winning,
+    price: { ...o.winning.price, amount: o.winning.price.amount + delta },
+    roomOptionId: r.optionId,
+    roomName: r.roomName,
+    board: r.board,
+    boardType: r.boardType,
+    hotelRefundable: r.refundable,
+    freeCancellationUntil: r.freeCancellationUntil,
+    flightToken: f.flightToken,
+    bagsIncluded: f.bagsIncluded,
+  };
+  o.selectedDelta = { ...o.winning.price, amount: delta };
+  // The recorded package also splits the price into flight and hotel; keep that consistent.
+  const w = o.winning as RawPackage & { flightPrice?: Money; hotelPrice?: Money };
+  if (w.flightPrice && w.hotelPrice)
+    Object.assign(o.selected, {
+      flightPrice: { ...w.flightPrice, amount: w.flightPrice.amount + f.delta.amount },
+      hotelPrice: { ...w.hotelPrice, amount: w.hotelPrice.amount + r.delta.amount },
+    });
+  if (!o.flights[f.flightToken]) o.flights[f.flightToken] = flightFromSummary(f, o.flights[o.winning.flightToken], String(p.depart ?? ""), Number(p.nights ?? 0));
+  return o;
+}
+
+/** Replay only: a flight option carries a one-line summary per direction ("ARN 19:05 → BCN 22:45 via CPH · D85503"). */
+function flightFromSummary(f: RawFlightOption, like: RawFlight, depart: string, nights: number): RawFlight {
+  const back = depart ? new Date(Date.parse(depart) + nights * 86_400_000).toISOString().slice(0, 10) : "";
+  const leg = (text: string, date: string, i: number) => {
+    const m = /^(\w{3}) (\d\d:\d\d) → (\w{3}) (\d\d:\d\d)(?: via ([\w ,]+?))? ·/.exec(text);
+    const tpl = like.journeys[i] ?? like.journeys[0];
+    if (!m) return tpl;
+    const via = m[5] ? m[5].split(/,\s*/) : [];
+    const place = (code: string) => ({ code, name: code, city: code, timeZone: "" });
+    return {
+      ...tpl,
+      origin: place(m[1]),
+      destination: place(m[3]),
+      stops: via.length,
+      duration: (f.duration ?? "").split(" + ")[i] ?? "",
+      segments: [
+        ...via.map((v) => ({ ...tpl.segments[0], destination: place(v) })),
+        { ...tpl.segments[tpl.segments.length - 1], origin: place(m[1]), destination: place(m[3]), departsLocal: `${date}T${m[2]}:00`, arrivesLocal: `${date}T${m[4]}:00` },
+      ].map((s, k, all) => (k === 0 ? { ...s, departsLocal: `${date}T${m[2]}:00` } : k === all.length - 1 ? s : s)),
+    };
+  };
+  return { ...like, airline: f.airline, price: f.price, journeys: [leg(f.outbound, depart, 0), leg(f.return, back, 1)] };
+}
+
 async function get<T>(route: string, p: Params, timeoutMs = 45_000): Promise<T> {
   if (env.apiMode === "replay") {
     // Transfers take a few seconds live; mimic that so the checkout's loading state shows offline too.
     if (route === "/packages/offer/transfers") await new Promise((r) => setTimeout(r, 1500));
     const body = (await replay(route, p)) as { data?: T } | T;
-    return (body && typeof body === "object" && "data" in body ? body.data : body) as T;
+    const data = (body && typeof body === "object" && "data" in body ? body.data : body) as T;
+    return (route === "/packages/offer" ? replaySwaps(data as RawOffer, p) : data) as T;
   }
   let res: Response;
   try {
@@ -275,7 +338,7 @@ async function get<T>(route: string, p: Params, timeoutMs = 45_000): Promise<T> 
 
 // Replay checkout: statuses come from dev/fixtures/checkout, amounts from the recorded offer and
 // transfer fixtures for the chosen hotel, so checkout matches what the offer page showed.
-let replayLast: { hotel?: string; transfer?: string | null } = {};
+let replayLast: { hotel?: string; flight?: string | null; room?: string | null; transfer?: string | null } = {};
 
 async function replayCheckout(route: string, body: unknown): Promise<RawCheckout> {
   // revalidate-<scenario>.json answers "Till betalning": ALLINC_REPLAY_CHECKOUT = ok | changed |
@@ -285,7 +348,10 @@ async function replayCheckout(route: string, body: unknown): Promise<RawCheckout
   const dir = path.join(env.fixturesDir, "checkout");
   const read = async (f: string) => JSON.parse(await readFile(path.join(dir, f), "utf8")) as RawCheckout;
 
-  const offer = ((await replay("/packages/offer", { hotel: replayLast.hotel })) as { data: RawOffer & { selected: { flightPrice: Money; hotelPrice: Money } } }).data;
+  const recorded = ((await replay("/packages/offer", { hotel: replayLast.hotel })) as { data: RawOffer }).data;
+  const offer = replaySwaps(recorded, { flight: replayLast.flight ?? undefined, room: replayLast.room ?? undefined }) as RawOffer & {
+    selected: { flightPrice: Money; hotelPrice: Money };
+  };
   const amounts: Record<string, Money | null> = { Flight: offer.selected.flightPrice, Hotel: offer.selected.hotelPrice, Transfer: null };
   if (replayLast.transfer) {
     const tr = ((await replay("/packages/offer/transfers", { hotel: replayLast.hotel })) as { data: RawTransfers }).data;
@@ -301,7 +367,17 @@ async function replayCheckout(route: string, body: unknown): Promise<RawCheckout
       });
     const total = lines.reduce((n, l) => n + l.price.amount, 0);
     const prev = lines.reduce((n, l) => n + (l.previousPrice ?? l.price).amount, 0);
-    return { ...r, total: { amount: total, currency: r.currency }, previousTotal: r.previousTotal ? { amount: prev, currency: r.currency } : null, lines };
+    // Hold as the API sets it: 20 minutes from this check (the fixtures' own times are placeholders).
+    // ALLINC_REPLAY_HOLD_SECONDS shortens it to try the countdown's expiry.
+    const now = Date.now();
+    return {
+      ...r,
+      total: { amount: total, currency: r.currency },
+      previousTotal: r.previousTotal ? { amount: prev, currency: r.currency } : null,
+      lines,
+      checkedAt: new Date(now).toISOString(),
+      expiresAt: new Date(now + Number(process.env.ALLINC_REPLAY_HOLD_SECONDS ?? 1200) * 1000).toISOString(),
+    };
   };
 
   if (route.endsWith("/revalidate")) return fit(await read(`revalidate-${process.env.ALLINC_REPLAY_CHECKOUT ?? "ok"}.json`));

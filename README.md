@@ -38,7 +38,7 @@ docker compose up --build
 |---|---|
 | `live` (default) | Calls `ALLINC_API_URL` |
 | `record` | Calls it and saves each response under `dev/fixtures` |
-| `replay` | Answers from `dev/fixtures`, never calls the API. Offer and transfer fall back to any recorded hotel; filters and swaps are not re-applied. Checkout: `ALLINC_REPLAY_CHECKOUT` picks what "Till betalning" answers |
+| `replay` | Answers from `dev/fixtures`, never calls the API. Offer and transfer fall back to any recorded hotel; filters are not re-applied, room/flight swaps are. Checkout: `ALLINC_REPLAY_CHECKOUT` picks what "Till betalning" answers |
 
 ## Security model
 

@@ -17,6 +17,7 @@ export type CheckoutViewClient = {
   total: Price | null;
   previousTotal: Price | null;
   expiresAt: string | null;
+  secondsLeft: number | null;
   lines: { label: string; status: "ok" | "changed" | "soldout" | "unknown"; price: Price; previousPrice: Price | null; changes: string[] }[];
   soldOutHref: string | null;
   canPay: boolean;
