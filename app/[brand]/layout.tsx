@@ -19,7 +19,16 @@ export async function generateMetadata({ params }: LayoutProps<"/[brand]">): Pro
   return {
     title: { default: `${brand?.name} – paketresor`, template: `%s · ${brand?.name}` },
     description: brand?.tagline,
-    icons: brand?.id === "allinc" ? { icon: "/brands/allinc/symbol.svg" } : undefined,
+    icons:
+      brand?.id === "allinc"
+        ? {
+            icon: [
+              { url: "/brands/allinc/favicon.ico", sizes: "any" },
+              { url: "/brands/allinc/symbol.svg", type: "image/svg+xml" },
+            ],
+            apple: "/brands/allinc/apple-touch-icon.png",
+          }
+        : undefined,
   };
 }
 

@@ -16,6 +16,13 @@
   --color-surface: var(--brand-surface);
   --color-canvas: var(--brand-canvas);
   --color-success: var(--brand-success);
+  --color-panel: var(--brand-panel);
+  --color-rating: var(--brand-rating);
+  --color-star: var(--brand-star);
+  --radius-hero: var(--brand-radius-hero);
+  --shadow-card: var(--brand-shadow-card);
+  --shadow-chip: var(--brand-shadow-chip);
+  --shadow-float: var(--brand-shadow-float);
   --radius-card: var(--brand-radius-card);
   --radius-control: var(--brand-radius-control);
   --font-heading: var(--brand-font-heading);
@@ -30,7 +37,13 @@ body {
 
 h1, h2, h3, .font-heading {
   font-family: var(--font-heading);
+  font-weight: 700;
+  letter-spacing: -0.01em;
 }
+
+/* Native <details> used as a dropdown (filter pills): no marker, closes on outside click via JS-free focus. */
+details > summary { list-style: none; cursor: pointer; }
+details > summary::-webkit-details-marker { display: none; }
 
 .skeleton {
   background: linear-gradient(90deg, #e9eef1 0%, #f5f8fa 50%, #e9eef1 100%);

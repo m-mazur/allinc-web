@@ -2,18 +2,15 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { Suspense } from "react";
 import { connection } from "next/server";
-import { Check, ImageOff, MapPin } from "lucide-react";
+import { Check, ChevronDown, ImageOff, MapPin, Plane, SlidersHorizontal } from "lucide-react";
 import { getBrand } from "@/brands";
 import { api, ApiError, type SearchFilters, type SearchQuery } from "@/lib/server/api";
 import { env } from "@/lib/server/env";
 import { parseSearch, toParams, type SP } from "@/lib/server/search-params";
 import { mapCardImages, mapSearch, type ResultCard } from "@/lib/server/view";
 import { SearchFormLoader, SearchFormSkeleton } from "@/components/search-form-loader";
-import { FlightLine } from "@/components/flight-line";
 import { TestModeNote } from "@/components/test-mode-note";
 import { Stars } from "@/components/stars";
-import { Badge } from "@/components/ui/badge";
-import { Card } from "@/components/ui/card";
 import { ButtonLink } from "@/components/ui/button";
 import { dateLong, money, nightsLabel, party } from "@/lib/format";
 import { cn } from "@/lib/cn";
@@ -22,7 +19,7 @@ export const metadata: Metadata = { title: "Sök paketresa", robots: { index: fa
 
 export default function SearchPage({ params, searchParams }: PageProps<"/[brand]/sok">) {
   return (
-    <main className="mx-auto max-w-6xl px-4 py-6">
+    <main className="mx-auto max-w-6xl px-4 py-4 xl:px-0">
       <Suspense fallback={<SearchSkeleton />}>
         <SearchContent params={params} searchParams={searchParams} />
       </Suspense>
@@ -36,58 +33,76 @@ async function SearchContent({ params, searchParams }: { params: Promise<{ brand
   const { query, filters, valid } = parseSearch(await searchParams, brand.defaultOrigin);
   return (
     <>
-      <Card className="p-4">
-        <Suspense fallback={<SearchFormSkeleton />}>
-          <SearchFormLoader values={query} compact />
-        </Suspense>
-      </Card>
+      <Suspense fallback={<SearchFormSkeleton variant="bar" />}>
+        <SearchFormLoader values={query} variant="bar" />
+      </Suspense>
       {valid ? (
-        <div className="mt-6 grid gap-6 lg:grid-cols-[240px_1fr]">
-          <Filters q={query} f={filters} />
-          <Suspense key={toParams(query, filters)} fallback={<ResultsSkeleton />}>
-            <Results q={query} f={filters} market={brand.market} />
-          </Suspense>
-        </div>
+        <Suspense key={toParams(query, filters)} fallback={<ResultsSkeleton />}>
+          <Results q={query} f={filters} market={brand.market} />
+        </Suspense>
       ) : (
-        <p className="mt-10 text-center text-muted">Välj ett resmål för att se resor.</p>
+        <p className="mt-16 text-center text-muted">Välj ett resmål för att se resor.</p>
       )}
     </>
   );
 }
 
-// ---------- filters: plain links, so they work without JS and every state has a URL ----------
+// ---------- filters: pills that open a menu of links (native <details>, works without JS) ----------
 
 function Filters({ q, f }: { q: SearchQuery; f: SearchFilters }) {
   const link = (change: Record<string, string | undefined>) => `/sok?${toParams(q, f, { ...change, limit: undefined })}`;
+  const boards: [string, string][] = [
+    ["BedAndBreakfast", "Frukost"],
+    ["HalfBoard", "Halvpension"],
+    ["AllInclusive", "All inclusive"],
+    ["RoomOnly", "Endast logi"],
+  ];
   return (
-    <aside className="space-y-5" aria-label="Filter">
-      <FilterGroup title="Sortera">
+    <div className="flex flex-wrap items-center gap-2" aria-label="Filter">
+      <Pill label={f.sort === "starsDesc" ? "Flest stjärnor" : "Lägsta pris"} icon={<SlidersHorizontal className="size-4" aria-hidden />} active={false}>
         <Opt on={!f.sort} href={link({ sort: undefined })}>Lägsta pris</Opt>
         <Opt on={f.sort === "starsDesc"} href={link({ sort: "starsDesc" })}>Flest stjärnor</Opt>
-      </FilterGroup>
-      <FilterGroup title="Kost">
+      </Pill>
+      <Pill label={boards.find(([v]) => v === f.board)?.[1] ?? "Kost"} active={!!f.board}>
         <Opt on={!f.board} href={link({ board: undefined })}>Alla</Opt>
-        {[
-          ["BedAndBreakfast", "Frukost"],
-          ["HalfBoard", "Halvpension"],
-          ["AllInclusive", "All inclusive"],
-          ["RoomOnly", "Endast logi"],
-        ].map(([v, l]) => (
+        {boards.map(([v, l]) => (
           <Opt key={v} on={f.board === v} href={link({ board: v })}>{l}</Opt>
         ))}
-      </FilterGroup>
-      <FilterGroup title="Hotell">
+      </Pill>
+      <Pill label={f.minStars ? `${f.minStars}+ stjärnor` : "Stjärnor"} active={!!f.minStars}>
         <Opt on={!f.minStars} href={link({ stars: undefined })}>Alla</Opt>
         {[3, 4, 5].map((s) => (
           <Opt key={s} on={f.minStars === s} href={link({ stars: String(s) })}>{s} stjärnor eller fler</Opt>
         ))}
-      </FilterGroup>
-      <FilterGroup title="Övrigt">
-        <Opt on={!!f.direct} href={link({ direct: f.direct ? undefined : "1" })}>Bara direktflyg</Opt>
-        <Opt on={f.bags === "checked"} href={link({ bags: f.bags === "checked" ? undefined : "checked" })}>Incheckat bagage ingår</Opt>
-        <Opt on={!!f.refundable} href={link({ refundable: f.refundable ? undefined : "1" })}>Fri avbokning av hotellet</Opt>
-      </FilterGroup>
-    </aside>
+      </Pill>
+      <Toggle on={!!f.direct} href={link({ direct: f.direct ? undefined : "1" })}>Direktflyg</Toggle>
+      <Toggle on={f.bags === "checked"} href={link({ bags: f.bags === "checked" ? undefined : "checked" })}>Bagage ingår</Toggle>
+      <Toggle on={!!f.refundable} href={link({ refundable: f.refundable ? undefined : "1" })}>Fri avbokning</Toggle>
+    </div>
+  );
+}
+
+const pillCls = "inline-flex h-10 items-center gap-1.5 rounded-full border bg-surface px-4 text-sm font-bold shadow-chip";
+
+function Pill({ label, icon, active, children }: { label: string; icon?: React.ReactNode; active: boolean; children: React.ReactNode }) {
+  return (
+    <details className="relative">
+      <summary className={cn(pillCls, active ? "border-primary text-primary" : "border-line hover:border-primary/40")}>
+        {icon}
+        {label}
+        <ChevronDown className="size-3.5" aria-hidden />
+      </summary>
+      <div className="absolute left-0 z-20 mt-2 flex w-56 flex-col rounded-card border border-line bg-surface p-1.5 shadow-float">{children}</div>
+    </details>
+  );
+}
+
+function Toggle({ on, href, children }: { on: boolean; href: string; children: React.ReactNode }) {
+  return (
+    <Link href={href} scroll={false} aria-pressed={on} className={cn(pillCls, on ? "border-primary bg-primary-soft text-primary" : "border-line hover:border-primary/40")}>
+      {on && <Check className="size-3.5" aria-hidden />}
+      {children}
+    </Link>
   );
 }
 
@@ -97,7 +112,7 @@ function Opt({ on, href, children }: { on: boolean; href: string; children: Reac
       href={href}
       scroll={false}
       aria-current={on ? "true" : undefined}
-      className={cn("flex items-center justify-between rounded-control px-3 py-2 text-sm hover:bg-primary-soft", on && "bg-primary-soft font-semibold text-primary")}
+      className={cn("flex items-center justify-between rounded-control px-3 py-2 text-sm hover:bg-panel", on && "font-bold text-primary")}
     >
       {children}
       {on && <Check className="size-4" aria-hidden />}
@@ -105,16 +120,7 @@ function Opt({ on, href, children }: { on: boolean; href: string; children: Reac
   );
 }
 
-function FilterGroup({ title, children }: { title: string; children: React.ReactNode }) {
-  return (
-    <div>
-      <h2 className="mb-1 px-3 text-xs font-semibold uppercase tracking-wide text-muted">{title}</h2>
-      <div className="flex flex-col">{children}</div>
-    </div>
-  );
-}
-
-// ---------- results: prices first, photos stream in when hotel content arrives ----------
+// ---------- results: a deal grid. Prices first, photos stream in when hotel content arrives ----------
 
 async function Results({ q, f, market }: { q: SearchQuery; f: SearchFilters; market: string }) {
   let raw;
@@ -130,31 +136,34 @@ async function Results({ q, f, market }: { q: SearchQuery; f: SearchFilters; mar
     : Promise.resolve({} as Record<string, string | null>);
 
   return (
-    <section aria-label="Resor">
-      <div className="mb-4 flex flex-wrap items-baseline justify-between gap-2">
-        <h1 className="text-2xl font-bold">
-          {view.total} resor till {view.destination}
-        </h1>
-        <p className="text-sm text-muted">
-          {dateLong(q.depart)} · {nightsLabel(q.nights)} · {party(q.adults, q.childAges.length)} · pris för alla resenärer
-        </p>
+    <section aria-label="Resor" className="mt-8">
+      <div className="mb-5 flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+        <div>
+          <h1 className="text-2xl">
+            {view.total} resor till {view.destination}
+          </h1>
+          <p className="text-[15px] text-muted">
+            {dateLong(q.depart)} · {nightsLabel(q.nights)} · {party(q.adults, q.childAges.length)} · flyg och hotell
+          </p>
+        </div>
+        <Filters q={q} f={f} />
       </div>
       {view.testFlights && <TestModeNote />}
       {view.cards.length === 0 ? (
-        <Card className="p-8 text-center text-muted">Inga resor matchar filtren. Prova att ta bort ett filter.</Card>
+        <div className="rounded-card bg-panel p-10 text-center text-muted">Inga resor matchar filtren. Prova att ta bort ett filter.</div>
       ) : (
-        <ol className="flex flex-col gap-4">
+        <ol className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           {view.cards.map((c) => (
             <li key={c.id}>
-              <ResultCardView card={c} images={images} />
+              <DealCard card={c} images={images} />
             </li>
           ))}
         </ol>
       )}
       {view.shown < view.total && (
-        <div className="mt-6 text-center">
-          <ButtonLink variant="outline" href={`/sok?${toParams(q, f, { limit: String(Math.min(100, (f.limit ?? 20) + 20)) })}`} scroll={false}>
-            Visa fler resor
+        <div className="mt-8 text-center">
+          <ButtonLink variant="pill" className="h-[42px] px-8" href={`/sok?${toParams(q, f, { limit: String(Math.min(100, (f.limit ?? 20) + 20)) })}`} scroll={false}>
+            Visa fler
           </ButtonLink>
         </div>
       )}
@@ -162,58 +171,52 @@ async function Results({ q, f, market }: { q: SearchQuery; f: SearchFilters; mar
   );
 }
 
-function ResultCardView({ card, images }: { card: ResultCard; images: Promise<Record<string, string | null>> }) {
+function DealCard({ card, images }: { card: ResultCard; images: Promise<Record<string, string | null>> }) {
   const href = `/resa/${card.ref}`;
+  const out = card.flight.legs[0];
   return (
-    <Card className="group grid overflow-hidden transition-shadow hover:shadow-[0_8px_28px_rgba(16,40,60,0.12)] sm:grid-cols-[260px_1fr]">
-      <Link href={href} tabIndex={-1} aria-hidden className="relative block aspect-[4/3] bg-canvas sm:aspect-auto">
+    <article className="flex h-full flex-col overflow-hidden rounded-card border border-line bg-surface shadow-card transition-shadow hover:shadow-float">
+      <Link href={href} tabIndex={-1} aria-hidden className="relative block aspect-[16/10] bg-panel">
         <Suspense fallback={<div className="skeleton absolute inset-0" />}>
           <CardImage images={images} k={card.imageKey} alt={card.hotel.name} />
         </Suspense>
+        {card.refundable && (
+          <span className="absolute left-2.5 top-2.5 rounded bg-accent px-2 py-0.5 text-[11px] font-bold uppercase tracking-wide text-on-accent">Fri avbokning</span>
+        )}
       </Link>
-      <div className="flex flex-col gap-3 p-4 sm:flex-row sm:justify-between">
-        <div className="min-w-0 space-y-2">
-          <div>
-            <h2 className="text-lg font-bold leading-snug">
-              <Link href={href} className="hover:text-primary">
-                {card.hotel.name}
-              </Link>
-            </h2>
-            <div className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted">
-              {card.hotel.stars ? <Stars n={card.hotel.stars} /> : card.hotel.kind && <span>{card.hotel.kind}</span>}
-              {card.hotel.area && (
-                <span className="inline-flex items-center gap-1">
-                  <MapPin className="size-3.5" aria-hidden /> {card.hotel.area}
-                </span>
-              )}
-            </div>
-          </div>
-          <div className="flex flex-wrap gap-1.5">
-            <Badge tone="brand">{card.board}</Badge>
-            {card.refundable && <Badge tone="good">Fri avbokning</Badge>}
-            {card.direct && <Badge>Direktflyg</Badge>}
-          </div>
-          <div className="grid gap-2 sm:grid-cols-2">
-            {card.flight.legs.map((leg, i) => (
-              <FlightLine key={i} leg={leg} label={i === 0 ? "Ut" : "Hem"} />
-            ))}
-          </div>
-          <div>
-            <p className="text-xs text-muted">
-              {card.flight.airline} · {card.bags}
-            </p>
-          </div>
+      <div className="flex flex-1 flex-col px-3.5 pb-3.5 pt-3">
+        <h2 className="truncate text-base">
+          <Link href={href} className="hover:text-primary">
+            {card.hotel.name}
+          </Link>
+        </h2>
+        <p className="mt-0.5 flex items-center gap-1 truncate text-xs text-muted">
+          <MapPin className="size-3 shrink-0" aria-hidden />
+          {[card.hotel.area, card.hotel.city].filter(Boolean).join(", ")}
+        </p>
+        <div className="mt-2 flex items-center gap-2 text-xs">
+          {card.hotel.stars ? <Stars n={card.hotel.stars} /> : <span className="text-muted">{card.hotel.kind}</span>}
+          <span className="rounded bg-primary-soft px-1.5 py-0.5 font-bold text-primary">{card.board}</span>
         </div>
-        <div className="flex shrink-0 flex-row items-end justify-between gap-3 border-t border-line pt-3 sm:flex-col sm:border-0 sm:pt-0">
-          <div className="sm:text-right">
-            <p className="text-2xl font-bold tabular-nums">{money(card.price)}</p>
-            <p className="text-sm text-muted">{money(card.perPerson)} per person</p>
-            {card.payAtHotel && <p className="text-xs text-muted">+ ca {money(card.payAtHotel)} i skatt på hotellet</p>}
-          </div>
-          <ButtonLink href={href}>Välj</ButtonLink>
+        {out && (
+          <p className="mt-2 mb-3 flex items-center gap-1.5 truncate text-xs text-muted">
+            <Plane className="size-3 shrink-0" aria-hidden />
+            {out.departs} {out.from} → {out.arrives} {out.to} · {out.stops === 0 ? "direkt" : `${out.stops} byte`}
+          </p>
+        )}
+        <div className="mt-auto flex items-end justify-between gap-2 border-t border-line pt-3">
+          <p className="leading-tight">
+            <span className="text-xs text-muted">fr. </span>
+            <span className="text-xl font-bold tabular-nums">{money(card.perPerson)}</span>
+            <span className="text-xs text-muted"> /pp</span>
+            <span className="block text-[11px] text-muted">{money(card.price)} totalt</span>
+          </p>
+          <ButtonLink href={href} variant="outline" size="sm" className="px-3.5">
+            Visa resa
+          </ButtonLink>
         </div>
       </div>
-    </Card>
+    </article>
   );
 }
 
@@ -235,24 +238,30 @@ function SearchError({ error }: { error: unknown }) {
     kind === "BadRequest"
       ? "Sökningen kunde inte tolkas. Kontrollera datum och resmål."
       : "Vi kunde inte hämta resor just nu. Försök igen om en liten stund.";
-  return <Card className="p-8 text-center text-muted">{text}</Card>;
+  return <div className="mt-8 rounded-card bg-panel p-10 text-center text-muted">{text}</div>;
 }
 
 function ResultsSkeleton() {
   return (
-    <div className="flex flex-col gap-4" aria-busy="true" aria-label="Söker resor">
-      <div className="skeleton h-8 w-72 rounded" />
-      {Array.from({ length: 4 }, (_, i) => (
-        <Card key={i} className="grid overflow-hidden sm:grid-cols-[260px_1fr]">
-          <div className="skeleton aspect-[4/3] sm:aspect-auto sm:h-48" />
-          <div className="space-y-3 p-4">
-            <div className="skeleton h-5 w-1/2 rounded" />
-            <div className="skeleton h-4 w-1/3 rounded" />
-            <div className="skeleton h-4 w-2/3 rounded" />
-            <div className="skeleton h-4 w-2/3 rounded" />
+    <div className="mt-8" aria-busy="true" aria-label="Söker resor">
+      <div className="skeleton h-7 w-72 rounded" />
+      <div className="skeleton mt-2 h-4 w-96 max-w-full rounded" />
+      <p className="mt-4 text-sm text-muted" role="status">
+        Vi letar flyg och hotell…
+      </p>
+      <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        {Array.from({ length: 8 }, (_, i) => (
+          <div key={i} className="overflow-hidden rounded-card border border-line">
+            <div className="skeleton aspect-[16/10]" />
+            <div className="space-y-2 p-3.5">
+              <div className="skeleton h-4 w-3/4 rounded" />
+              <div className="skeleton h-3 w-1/2 rounded" />
+              <div className="skeleton h-3 w-2/3 rounded" />
+              <div className="skeleton mt-4 h-8 rounded" />
+            </div>
           </div>
-        </Card>
-      ))}
+        ))}
+      </div>
     </div>
   );
 }
@@ -260,12 +269,8 @@ function ResultsSkeleton() {
 function SearchSkeleton() {
   return (
     <>
-      <Card className="p-4">
-        <SearchFormSkeleton />
-      </Card>
-      <div className="mt-6">
-        <ResultsSkeleton />
-      </div>
+      <SearchFormSkeleton variant="bar" />
+      <ResultsSkeleton />
     </>
   );
 }

@@ -20,7 +20,7 @@ async function load(): Promise<ReferenceData> {
   const [dest, air] = await Promise.all([api.destinations(), api.airports()]);
   const grouped = new Set(air.groups.flatMap((g) => g.members));
   const origins = [
-    ...air.groups.map((g) => ({ code: g.code, label: `${g.name.replace(/\s*\(all airports\)/i, "")} (alla flygplatser)` })),
+    ...air.groups.map((g) => ({ code: g.code, label: `${g.name.replace(/\s*\(all airports\)/i, "")}, alla` })),
     ...air.origins.map((o) => ({
       code: o.iata,
       label: `${CITY_SV[o.city] ?? o.city}${grouped.has(o.iata) ? ` ${o.name.replace(o.city, "").trim()}` : ""}`,

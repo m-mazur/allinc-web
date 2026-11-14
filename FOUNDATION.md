@@ -119,8 +119,13 @@ yellow ribbon sweeping across it, plus a rounded graphite wordmark.
 | Headings / body | Quicksand / Inter (Google Fonts, free) |
 
 - The logo letters are drawn shapes, not a font, so the logo needs no licence.
-- Still open: lowercase "allinc" or a capital A. The site takes the logo as an SVG file, so this
-  does not block anything.
+- Decided 2026-11-14: lowercase "allinc" in the Sky palette (dot `#3DB8EE` to `#1382C8`, ribbon
+  `#FFB81F` to `#FFD84A`, graphite word).
+- Final files are in `public/brands/allinc/`: `logo.svg` and `logo-white.svg` (white word for dark
+  backgrounds), `logo-one-colour.svg` and `logo-one-colour-white.svg`, `symbol.svg`, PNG copies
+  (`logo.png`, `logo-white.png`, `icon-192.png`, `icon-512.png`), `apple-touch-icon.png` and
+  `favicon.ico`. `app/favicon.ico` is the same Allinc icon. The apple touch icon is not wired into
+  the page metadata yet.
 - No paid fonts for any brand: white labels pick from Google Fonts or other open-licence fonts.
 
 ## 6. Shape of the repo (as built)

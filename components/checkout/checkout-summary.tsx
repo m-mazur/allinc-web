@@ -38,7 +38,7 @@ export function PayButton() {
           e.preventDefault();
           setClicked(true);
         }}
-        className="inline-flex h-13 w-full items-center justify-center rounded-control bg-primary px-7 font-semibold text-on-primary hover:bg-primary-hover"
+        className="inline-flex h-[52px] w-full items-center justify-center rounded-control bg-primary px-7 font-bold text-on-primary hover:bg-primary-hover"
       >
         Till betalning
       </button>

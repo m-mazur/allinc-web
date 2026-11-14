@@ -306,7 +306,7 @@ export type TransferView = {
 };
 
 const TYPE_SV: Record<string, string> = { Shared: "Delad transfer", Private: "Privat transfer" };
-const VEHICLE_SV: Record<string, string> = { car: "bil", suv: "SUV", minibus: "minibuss", van: "minivan", bus: "buss", limousine: "limousin" };
+const VEHICLE_SV: Record<string, string> = { car: "bil", "hybrid car": "hybridbil", "electric car": "elbil", "adapted vehicle": "anpassat fordon", suv: "SUV", minibus: "minibuss", van: "minivan", bus: "buss", limousine: "limousin" };
 const CATEGORY_SV: Record<string, string> = { premium: "premium", luxury: "lyx", vip: "VIP" };
 
 function reasonSv(raw: RawTransfers): string {

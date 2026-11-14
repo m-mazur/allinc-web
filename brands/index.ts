@@ -14,7 +14,10 @@ export type Brand = {
   /** A one-colour logo for dark backgrounds, if the brand has one. */
   logoOnDark?: { src: string; width: number; height: number };
   tagline: string;
+  /** Photo behind the hero search. None yet: the drawn sun-and-sea art is used. */
   heroImage?: string;
+  /** Destination tiles on the home page: our destination id, a short tag, and a photo if we have one. */
+  featured: { id: string; label: string; tag: string; image?: string }[];
   contact: { phone?: string; email?: string };
   /** Default departure airport or group in the search form. */
   defaultOrigin: string;

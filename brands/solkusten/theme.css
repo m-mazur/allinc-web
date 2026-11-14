@@ -1,4 +1,4 @@
-/* Solkusten (demo white label): teal and amber, square-ish corners, Inter headings. */
+/* Solkusten (demo white label): teal and amber, squarer corners, Inter headings. */
 [data-brand="solkusten"] {
   --brand-primary: #0f766e;
   --brand-primary-hover: #0b5e58;
@@ -8,7 +8,8 @@
   --brand-ink: #0f3d3a;
   --brand-hero-from: #14b8a6;
   --brand-hero-to: #0f766e;
-  --brand-radius-card: 8px;
+  --brand-radius-card: 6px;
   --brand-radius-control: 6px;
+  --brand-radius-hero: 6px;
   --brand-font-heading: var(--font-inter), system-ui, sans-serif;
 }

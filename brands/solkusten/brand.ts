@@ -11,5 +11,13 @@ export const solkusten: Brand = {
   logo: { src: "/brands/solkusten/logo.svg", width: 520, height: 120, alt: "Solkusten" },
   tagline: "Paketresor till solen, från din närmaste flygplats.",
   contact: { email: "kundservice@solkusten.example" },
+  featured: [
+    { id: "es.gran-canaria", label: "Gran Canaria", tag: "Vintersol" },
+    { id: "es.costa-del-sol", label: "Costa del Sol", tag: "Strand" },
+    { id: "gr.rhodes", label: "Rhodos", tag: "Familj" },
+    { id: "cy.cyprus", label: "Cypern", tag: "Värme året runt" },
+    { id: "it.rome", label: "Rom", tag: "Storstad" },
+    { id: "hr.split", label: "Split", tag: "Sommar" },
+  ],
   defaultOrigin: "GOT",
 };

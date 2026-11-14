@@ -23,7 +23,7 @@ export const metadata: Metadata = { title: "Kassa", robots: { index: false } };
 
 export default function CheckoutPage({ params }: PageProps<"/[brand]/kassa/[ref]">) {
   return (
-    <main className="mx-auto max-w-6xl px-4 py-6">
+    <main className="mx-auto max-w-6xl px-4 py-6 xl:px-0">
       <Suspense fallback={<div className="skeleton h-96 rounded-card" aria-busy="true" />}>
         <Checkout params={params} />
       </Suspense>
@@ -61,14 +61,14 @@ async function Checkout({ params }: { params: Promise<{ brand: string; ref: stri
       <Link href={`/resa/${o.ref}`} className="mb-4 inline-flex items-center gap-1 text-sm font-medium text-primary hover:underline">
         <ArrowLeft className="size-4" aria-hidden /> Tillbaka till resan
       </Link>
-      <h1 className="text-3xl font-bold">Kassa</h1>
+      <h1 className="text-[28px]">Kassa</h1>
       {o.testFlights && <div className="mt-3"><TestModeNote /></div>}
       <div className="mt-6 grid gap-6 lg:grid-cols-[1fr_360px]">
         <div className="space-y-6">
           <Card className="p-5">
             <div className="flex items-center gap-2">
               <Bus className="size-5 text-primary" aria-hidden />
-              <h2 className="text-xl font-bold">Transfer till hotellet</h2>
+              <h2 className="text-lg">Transfer till hotellet</h2>
             </div>
             <Suspense fallback={<TransferLoading />}>
               <Transfers q={ref.q} f={ref.f} market={brand.market} hotel={ref.h} flight={ref.fl} />
@@ -147,7 +147,7 @@ function Travellers({ adults, childAges }: { adults: number; childAges: number[]
   const input = "mt-1 h-11 w-full rounded-control border border-line bg-surface px-3 text-ink focus:border-primary focus:outline-2 focus:outline-primary/30";
   return (
     <Card className="p-5">
-      <h2 className="text-xl font-bold">Resenärer</h2>
+      <h2 className="text-lg">Resenärer</h2>
       <p className="text-sm text-muted">Namn som i passet. (Förhandsversion: inget skickas.)</p>
       {/* Not a <form>: a plain submit would put names in the URL. Booking will post to a server action. */}
       <div className="mt-4 space-y-5">
