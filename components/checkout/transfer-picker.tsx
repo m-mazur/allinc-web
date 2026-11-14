@@ -1,7 +1,6 @@
 "use client";
 
 import { Bus, CarFront, Check, Clock, Luggage, Users } from "lucide-react";
-import { useEffect } from "react";
 import { money } from "@/lib/format";
 import { cn } from "@/lib/cn";
 import { useCheckout } from "./checkout-state";
@@ -22,13 +21,6 @@ type Option = {
 
 export function TransferPicker({ options, reason, airport, arrival, note }: { options: Option[]; reason: string; airport: string; arrival: string; note: string | null }) {
   const { transfer, setTransfer } = useCheckout();
-  const rec = options.find((o) => o.recommended) ?? null;
-
-  // The suggestion starts selected: one click to remove it, nothing to find.
-  useEffect(() => {
-    if (rec) setTransfer({ id: rec.id, title: rec.title, price: rec.price });
-    return () => setTransfer(null);
-  }, [rec?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const choose = (o: Option | null) => setTransfer(o ? { id: o.id, title: o.title, price: o.price } : null);
 

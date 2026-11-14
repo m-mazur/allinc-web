@@ -30,7 +30,6 @@ export function HeroMedia({ video, poster, posterSmall }: Props) {
     <>
       <picture>
         {posterSmall && <source media="(max-width: 767px)" srcSet={posterSmall} />}
-        {/* eslint-disable-next-line @next/next/no-img-element */}
         <img src={poster} alt="" fetchPriority="high" className="absolute inset-0 h-full w-full object-cover" />
       </picture>
       {play && (

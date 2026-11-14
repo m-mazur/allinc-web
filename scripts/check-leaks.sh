@@ -5,7 +5,7 @@
 set -euo pipefail
 BASE="${1:-http://localhost:3000}"
 cd "$(dirname "$0")/.."
-PATTERN='hotelbeds|duffel|ratehawk|\boff_[A-Za-z0-9]{6,}|hotelKey|flightToken|bookingToken|rateKey|markup|supplier|Frankfurter|\bECB\b|fixingDates|/ops|cacheExpiresAt|diagnostics|ALLINC_API|WEB_SEAL_KEY|localhost:8080|allinc-api|htxstaging|giata'
+PATTERN='hotelbeds|duffel|ratehawk|\boff_[A-Za-z0-9]{6,}|hotelKey|flightToken|bookingToken|rateKey|markup|supplier|Frankfurter|\bECB\b|fixingDates|/ops|cacheExpiresAt|diagnostics|ALLINC_API|WEB_SEAL_KEY|localhost:8080|allinc-api|htxstaging|giata|checkoutId|\bco_[A-Za-z0-9]{4,}|optionId|Idempotency|X-Allinc-Web-Key'
 fail=0
 
 if [ -d .next/static ]; then

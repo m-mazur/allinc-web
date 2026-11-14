@@ -16,6 +16,7 @@ browser ─▶ proxy.ts (Host → brand, rewrite to /<brand>/...)
         ─▶ app/[brand]/  home · sok (results) · resa/[ref] (offer) · kassa/[ref] (checkout)
               └▶ lib/server/api.ts (server-only, public API routes only) ─▶ allinc-api
               └▶ lib/server/view.ts (hand-picked public view models; the ONLY data pages get)
+              └▶ lib/server/checkout.ts + lib/actions/checkout.ts (live price check at checkout)
         ─▶ app/bild/[token]  image proxy for sealed supplier photo URLs
 ```
 
@@ -52,10 +53,11 @@ compose's api casually: a fresh API cache means live Hotelbeds calls.
 4. Call only public API routes. **Prices and content are separate calls**: search/offer for prices,
    `/hotels/content` for texts and photos; stream content in after prices.
 5. The web does not cache search results or prices (the API owns caching); `fetch` uses `no-store`.
-6. No `NEXT_PUBLIC_*` variables. `WEB_SEAL_KEY` is required in production.
-7. **Hotelbeds quota is ~50/day (API caps 40)**: build and test pages in `replay` mode; use `record`
-   only with Marcus's OK.
+6. No `NEXT_PUBLIC_*` variables. `WEB_SEAL_KEY` and `ALLINC_WEB_KEY` are required in production.
+   Amounts to pay come only from the API's checkout session, never from the browser.
+7. **Hotelbeds quota is ~50/day (API caps 40; searches stop at 30, 10 are kept for checkout checks)**:
+   build and test pages in `replay` mode; use `record` only with Marcus's OK.
 8. **Git:** `/usr/bin/git` only; other threads may be editing: commit only your own files.
-   **Never push without Marcus's go-ahead** (the GitHub repo does not exist yet).
+   **Never push without Marcus's go-ahead** (remote: github.com/m-mazur/allinc-web, created by Marcus, empty).
 9. **Keep these files true.** When you change a flow, rule or setting, update the relevant
    CLAUDE.md (and FOUNDATION.md / README.md) in the same commit.

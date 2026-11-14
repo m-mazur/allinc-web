@@ -5,10 +5,12 @@ import { Suspense } from "react";
 import { connection } from "next/server";
 import { ArrowLeft, Bus } from "lucide-react";
 import { getBrand } from "@/brands";
-import { api, ApiError, type SearchFilters, type SearchQuery } from "@/lib/server/api";
+import { api, ApiError, type RawTransfers } from "@/lib/server/api";
+import { sealCheckout, startCheckout } from "@/lib/server/checkout";
 import { mapOffer, mapTransfers, openTripRef } from "@/lib/server/view";
 import { CheckoutState } from "@/components/checkout/checkout-state";
-import { CheckoutTotal, PayButton } from "@/components/checkout/checkout-summary";
+import { CheckoutTotal, PayPanel } from "@/components/checkout/checkout-summary";
+import { SessionInit } from "@/components/checkout/session-init";
 import { TransferPicker } from "@/components/checkout/transfer-picker";
 import { FlightLine } from "@/components/flight-line";
 import { TestModeNote } from "@/components/test-mode-note";
@@ -18,8 +20,10 @@ import { dateLong, nightsLabel, party } from "@/lib/format";
 
 export const metadata: Metadata = { title: "Kassa", robots: { index: false } };
 
-// Dummy checkout: shows the trip, a traveller form and the transfer suggestion. Nothing is paid
-// or booked. The transfer is its own call, streamed in after the page, so it never slows it.
+// Checkout: the trip, the transfer suggestion, a traveller form, and the live price check.
+// Streamed in after the shell: the transfer suggestion, then POST /checkout for the package with the
+// suggested transfer (one live supplier check). "Till betalning" checks again; payment itself is not
+// built yet, so nothing is paid or booked.
 
 export default function CheckoutPage({ params }: PageProps<"/[brand]/kassa/[ref]">) {
   return (
@@ -71,7 +75,7 @@ async function Checkout({ params }: { params: Promise<{ brand: string; ref: stri
               <h2 className="text-lg">Transfer till hotellet</h2>
             </div>
             <Suspense fallback={<TransferLoading />}>
-              <Transfers q={ref.q} f={ref.f} market={brand.market} hotel={ref.h} flight={ref.fl} />
+              <LiveCheckout trip={ref} market={brand.market} />
             </Suspense>
           </Card>
           <Travellers adults={o.trip.adults} childAges={ref.q.childAges} />
@@ -94,7 +98,7 @@ async function Checkout({ params }: { params: Promise<{ brand: string; ref: stri
               <span className="font-semibold">{s.room}</span> <span className="text-muted">· {s.board}</span>
             </p>
             <CheckoutTotal base={s.price} travellers={travellers} />
-            <PayButton />
+            <PayPanel />
           </Card>
         </aside>
       </div>
@@ -102,18 +106,34 @@ async function Checkout({ params }: { params: Promise<{ brand: string; ref: stri
   );
 }
 
-async function Transfers(p: { q: SearchQuery; f: SearchFilters; market: string; hotel: string; flight?: string }) {
-  const t = await api.transfers(p.q, p.f, p.market, p.hotel, p.flight).then(mapTransfers, (e: unknown) => e);
-  if (!t || t instanceof Error || !("options" in (t as object))) {
-    const busy = t instanceof ApiError && t.kind === "SourcesFailed";
-    return <p className="mt-3 text-sm text-muted">{busy ? "Transfer går inte att hämta just nu." : "Vi kunde inte hämta transfer just nu."} Resan går att boka utan.</p>;
-  }
-  const view = t as ReturnType<typeof mapTransfers>;
-  if (!view.options.length) return <p className="mt-3 text-sm text-muted">Vi hittade ingen transfer för den här resan.</p>;
+/** Loads the transfer suggestion, then checks the whole package live with the suggested transfer. */
+async function LiveCheckout({ trip, market }: { trip: NonNullable<ReturnType<typeof openTripRef>>; market: string }) {
+  const raw: RawTransfers | ApiError = await api.transfers(trip.q, trip.f, market, trip.h, trip.fl).catch((e: ApiError) => e);
+  const transfers = raw instanceof ApiError ? null : mapTransfers(raw);
+  const rec = raw instanceof ApiError ? null : raw.recommended;
+  const recView = transfers?.options.find((o) => o.recommended) ?? null;
+
+  const t = { q: trip.q, f: trip.f, h: trip.h, fl: trip.fl, r: trip.r };
+  const first = await startCheckout(t, market, rec?.optionId ?? null);
+  // A failed first check still gets a ref (no checkout id), so "Kontrollera priset igen" can start one.
+  const session = { view: first.view, ref: first.ref ?? sealCheckout("", t, market, rec?.optionId ?? null, 0), transferId: recView?.id ?? null };
+  const chosen = recView ? { id: recView.id, title: recView.title, price: recView.price } : null;
+
   return (
-    <div className="mt-3">
-      <TransferPicker options={view.options} reason={view.reason} airport={view.airport} arrival={view.arrival} note={view.note} />
-    </div>
+    <>
+      <SessionInit session={session} transfer={chosen} />
+      {!transfers ? (
+        <p className="mt-3 text-sm text-muted">
+          {raw instanceof ApiError && raw.kind === "SourcesFailed" ? "Transfer går inte att hämta just nu." : "Vi kunde inte hämta transfer just nu."} Resan går att boka utan.
+        </p>
+      ) : transfers.options.length === 0 ? (
+        <p className="mt-3 text-sm text-muted">Vi hittade ingen transfer för den här resan.</p>
+      ) : (
+        <div className="mt-3">
+          <TransferPicker options={transfers.options} reason={transfers.reason} airport={transfers.airport} arrival={transfers.arrival} note={transfers.note} />
+        </div>
+      )}
+    </>
   );
 }
 

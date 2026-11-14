@@ -13,6 +13,7 @@ import { SearchFormLoader, SearchFormSkeleton } from "@/components/search-form-l
 import { FlightLine } from "@/components/flight-line";
 import { Stars } from "@/components/stars";
 import { TestModeNote } from "@/components/test-mode-note";
+import { SoldOutNote } from "@/components/sold-out-note";
 import { ButtonLink } from "@/components/ui/button";
 import { Card, Panel } from "@/components/ui/card";
 import { dateLong, money, nightsLabel, party } from "@/lib/format";
@@ -20,17 +21,17 @@ import { cn } from "@/lib/cn";
 
 export const metadata: Metadata = { title: "Din resa", robots: { index: false } };
 
-export default function OfferPage({ params }: PageProps<"/[brand]/resa/[ref]">) {
+export default function OfferPage({ params, searchParams }: PageProps<"/[brand]/resa/[ref]">) {
   return (
     <main className="mx-auto max-w-6xl px-4 pb-6 xl:px-0">
       <Suspense fallback={<OfferSkeleton />}>
-        <Offer params={params} />
+        <Offer params={params} searchParams={searchParams} />
       </Suspense>
     </main>
   );
 }
 
-async function Offer({ params }: { params: Promise<{ brand: string; ref: string }> }) {
+async function Offer({ params, searchParams }: { params: Promise<{ brand: string; ref: string }>; searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   await connection(); // request-time: reads the clock and calls the API
   const { brand: brandId, ref: token } = await params;
   const brand = getBrand(brandId)!;
@@ -54,6 +55,7 @@ async function Offer({ params }: { params: Promise<{ brand: string; ref: string 
       <Link href={back} className="inline-flex items-center gap-1 py-2 text-sm font-bold text-primary hover:underline">
         <ArrowLeft className="size-4" aria-hidden /> Alla resor till {o.trip.destination}
       </Link>
+      <SoldOutNote what={(await searchParams).slutsalt} />
       <TitleRow o={o} />
       <Gallery o={o} />
       <div className="mt-6">

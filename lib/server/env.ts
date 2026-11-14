@@ -25,6 +25,8 @@ export const env = {
   fixturesDir: process.env.ALLINC_FIXTURES_DIR ?? `${process.cwd()}/dev/fixtures`,
   /** Hotel texts language. "en" until Swedish content is fetched (each language is its own supplier call). */
   contentLanguage: process.env.CONTENT_LANGUAGE ?? "en",
+  /** Shared secret for the API's /checkout routes (API setting Checkout:WebKey). Required in production. */
+  webKey: process.env.ALLINC_WEB_KEY ?? "",
   get sealKey() {
     return sealKey();
   },

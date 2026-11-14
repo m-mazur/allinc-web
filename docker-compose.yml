@@ -1,7 +1,7 @@
 # The site and the API on one private network. Only the web is published; the API has no host port,
 # runs with internal routes off (/ops, supplier prices, /viewer answer 404) and is reachable only by web.
 #
-#   cp .env.example .env            # set WEB_SEAL_KEY
+#   cp .env.example .env            # set WEB_SEAL_KEY and CHECKOUT_WEB_KEY
 #   docker compose up --build
 #
 # The API keeps its provider budget on the existing allinc-data volume, so the daily Hotelbeds cap holds.
@@ -12,6 +12,7 @@ services:
     env_file: ../allinc/backend/.env
     environment:
       InternalRoutes__Enabled: "false"
+      Checkout__WebKey: ${CHECKOUT_WEB_KEY:?Set CHECKOUT_WEB_KEY in .env (shared secret web -> api)}
     volumes:
       - allinc-data:/data
     expose:
@@ -23,6 +24,7 @@ services:
     environment:
       ALLINC_API_URL: http://api:8080
       WEB_SEAL_KEY: ${WEB_SEAL_KEY:?Set WEB_SEAL_KEY in .env (32+ random characters)}
+      ALLINC_WEB_KEY: ${CHECKOUT_WEB_KEY:?Set CHECKOUT_WEB_KEY in .env (shared secret web -> api)}
       CONTENT_LANGUAGE: ${CONTENT_LANGUAGE:-en}
     ports:
       - "3000:3000"

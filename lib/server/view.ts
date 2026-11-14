@@ -285,7 +285,7 @@ export function mapOffer(raw: RawOffer, content: RawContent | null, ref: { q: Se
 // ---------- transfers (checkout upsell) ----------
 
 export type TransferChoice = {
-  id: string; // index within this suggestion: the API's option ids stay on the server
+  id: string; // sealed API option id: sent back when the customer pays, never readable
   title: string;
   type: "shared" | "private" | "other";
   maxPax: number | null;
@@ -328,8 +328,8 @@ export function mapTransfers(raw: RawTransfers): TransferView {
     arrival: clock(raw.trip.arrivalLocal),
     reason: reasonSv(raw),
     note: raw.trip.note ? "Transfer till hotellet vid ankomst. Hemresan går från en annan flygplats." : null,
-    options: opts.map((o: RawTransferChoice, i) => ({
-      id: String(i),
+    options: opts.map((o: RawTransferChoice) => ({
+      id: sealStable("transfer.v1", o.optionId), // opened again by lib/server/checkout.ts openTransferId
       title: [
         TYPE_SV[o.type] ?? "Transfer",
         o.vehicle && o.vehicle.toLowerCase() !== "shuttle" ? (VEHICLE_SV[o.vehicle.toLowerCase()] ?? o.vehicle.toLowerCase()) : null,

@@ -4,8 +4,10 @@ The public booking site for Allinc and its white labels. Next.js 16 (App Router,
 TypeScript, Tailwind 4. Talks to `allinc-api` (the `allinc` repo) from the server only.
 Design and decisions: [FOUNDATION.md](FOUNDATION.md).
 
-First slice: search form -> results -> offer page (swap room or flight) -> dummy checkout where the
-transfer suggestion streams in. Nothing is paid or booked.
+Built so far: search form -> results -> offer page (swap room or flight) -> checkout, where the
+transfer suggestion streams in and the package is price-checked live with the suppliers through the
+API's `/checkout` routes (Ok / changed price / sold out / could not confirm / expired). Payment and
+booking are not built: nothing is paid or booked.
 
 ## Run it
 
@@ -26,6 +28,7 @@ Whole stack in Docker (API with internal routes off and no host port, web on :30
 
 ```bash
 echo "WEB_SEAL_KEY=$(/usr/bin/openssl rand -base64 48)" > .env
+echo "CHECKOUT_WEB_KEY=$(/usr/bin/openssl rand -base64 32)" >> .env
 docker compose up --build
 ```
 
@@ -35,7 +38,7 @@ docker compose up --build
 |---|---|
 | `live` (default) | Calls `ALLINC_API_URL` |
 | `record` | Calls it and saves each response under `dev/fixtures` |
-| `replay` | Answers from `dev/fixtures`, never calls the API. Offer and transfer fall back to any recorded hotel; filters and swaps are not re-applied |
+| `replay` | Answers from `dev/fixtures`, never calls the API. Offer and transfer fall back to any recorded hotel; filters and swaps are not re-applied. Checkout: `ALLINC_REPLAY_CHECKOUT` picks what "Till betalning" answers |
 
 ## Security model
 
@@ -48,6 +51,8 @@ prices, markup, exchange rates, hotel keys, flight booking tokens, cache traces 
   AES-256-GCM with `WEB_SEAL_KEY`, purpose-bound, expires after 24 h (`lib/server/seal.ts`).
 - Hotel and transfer photos go through `/bild/<sealed url>`, so supplier image hosts never appear.
   Only URLs we sealed, on an allowlist of hosts, can be fetched.
+- Checkout: the browser holds a sealed checkout ref only. The amount to pay and a confirmed new
+  total come from the API session; new price checks are rate-limited to protect supplier quota.
 - The flight supplier's test-mode airline (named after the supplier) shows as "Testflyg".
 - Only public API routes are called. In compose the API runs with `InternalRoutes__Enabled=false`
   and is not published to the host.

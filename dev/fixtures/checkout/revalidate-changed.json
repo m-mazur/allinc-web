@@ -1,0 +1,55 @@
+{
+ "checkoutId": "co_replay0001",
+ "status": "Changed",
+ "currency": "SEK",
+ "total": {
+  "amount": 6488,
+  "currency": "SEK"
+ },
+ "previousTotal": {
+  "amount": 5848,
+  "currency": "SEK"
+ },
+ "checkedAt": "2026-11-14T13:40:00+00:00",
+ "expiresAt": "2099-01-01T12:00:00+00:00",
+ "checksLeft": 2,
+ "lines": [
+  {
+   "product": "Flight",
+   "status": "Changed",
+   "price": {
+    "amount": 3683,
+    "currency": "SEK"
+   },
+   "previousPrice": {
+    "amount": 3043,
+    "currency": "SEK"
+   },
+   "changes": [
+    "Price",
+    "Baggage"
+   ]
+  },
+  {
+   "product": "Hotel",
+   "status": "Confirmed",
+   "price": {
+    "amount": 2171,
+    "currency": "SEK"
+   },
+   "previousPrice": null,
+   "changes": []
+  },
+  {
+   "product": "Transfer",
+   "status": "Confirmed",
+   "price": {
+    "amount": 634,
+    "currency": "SEK"
+   },
+   "previousPrice": null,
+   "changes": []
+  }
+ ],
+ "soldOut": null
+}

@@ -165,10 +165,25 @@ export type RawTransfers = {
   options: RawTransferChoice[];
 };
 
+export type CheckoutStatus = "Ok" | "Changed" | "SoldOut" | "CannotConfirm" | "Expired";
+export type RawCheckout = {
+  checkoutId: string;
+  status: CheckoutStatus;
+  currency: string;
+  total: Money;
+  previousTotal: Money | null;
+  checkedAt: string;
+  expiresAt: string;
+  checksLeft: number;
+  lines: { product: "Flight" | "Hotel" | "Transfer"; status: "Confirmed" | "Changed" | "SoldOut" | "CannotConfirm"; price: Money; previousPrice: Money | null; changes: string[] }[];
+  soldOut: { what: "flight" | "room" | "hotel" | "transfer"; redirect: "offer" | "results" | "checkout"; hotelKey: string | null; alsoSoldOut: string[] } | null;
+};
+export type CheckoutChoice = { q: SearchQuery; f: SearchFilters; market: string; hotel: string; flight?: string; room?: string; transfer?: string | null };
+
 export class ApiError extends Error {
   constructor(
     public status: number,
-    public kind: "NotFound" | "SourcesFailed" | "BadRequest" | "Unavailable",
+    public kind: "NotFound" | "SourcesFailed" | "BadRequest" | "Unavailable" | "TooManyChecks" | "TotalMismatch" | "Unauthorized",
   ) {
     super(`allinc-api ${status} ${kind}`);
   }
@@ -255,6 +270,67 @@ async function get<T>(route: string, p: Params, timeoutMs = 45_000): Promise<T> 
   return (body && typeof body === "object" && "data" in body ? body.data : body) as T;
 }
 
+// ---- checkout (POST, JSON) ----
+
+async function replayCheckout(route: string, body: unknown): Promise<RawCheckout> {
+  // dev/fixtures/checkout: start.json is the first check; revalidate-<scenario>.json answers "Betala",
+  // scenario from ALLINC_REPLAY_CHECKOUT (ok | changed | soldout-flight | soldout-room | soldout-hotel |
+  // soldout-transfer | cannotconfirm | expired). Confirm answers Ok at the confirmed total.
+  await new Promise((r) => setTimeout(r, 1200));
+  const dir = path.join(env.fixturesDir, "checkout");
+  const read = async (f: string) => JSON.parse(await readFile(path.join(dir, f), "utf8")) as RawCheckout;
+  if (route.endsWith("/revalidate")) return read(`revalidate-${process.env.ALLINC_REPLAY_CHECKOUT ?? "ok"}.json`);
+  const start = await read("start.json");
+  if (route.endsWith("/confirm")) {
+    const total = (body as { total: number }).total;
+    return { ...start, status: "Ok", total: { amount: total, currency: start.currency }, previousTotal: null, lines: start.lines.map((l) => ({ ...l, status: "Confirmed" as const, previousPrice: null, changes: [] })) };
+  }
+  return start;
+}
+
+async function post(route: string, body: unknown, headers: Record<string, string> = {}): Promise<RawCheckout> {
+  if (env.apiMode === "replay") return replayCheckout(route, body);
+  let res: Response;
+  try {
+    res = await fetch(`${env.apiUrl}${route}`, {
+      method: "POST",
+      cache: "no-store",
+      headers: { "content-type": "application/json", accept: "application/json", ...webKey(), ...headers },
+      body: JSON.stringify(body ?? {}),
+      signal: AbortSignal.timeout(40_000),
+    });
+  } catch {
+    throw new ApiError(503, "Unavailable");
+  }
+  return checkoutResponse(res);
+}
+
+async function getCheckout(id: string): Promise<RawCheckout> {
+  if (env.apiMode === "replay") return replayCheckout(`/checkout/${id}`, null);
+  const res = await fetch(`${env.apiUrl}/checkout/${encodeURIComponent(id)}`, {
+    cache: "no-store",
+    headers: { accept: "application/json", ...webKey() },
+    signal: AbortSignal.timeout(15_000),
+  }).catch(() => null);
+  if (!res) throw new ApiError(503, "Unavailable");
+  return checkoutResponse(res);
+}
+
+const webKey = (): Record<string, string> => (env.webKey ? { "X-Allinc-Web-Key": env.webKey } : {});
+
+async function checkoutResponse(res: Response): Promise<RawCheckout> {
+  if (res.ok) return (await res.json()) as RawCheckout;
+  const kind =
+    res.status === 404 ? "NotFound"
+    : res.status === 409 ? "TotalMismatch"
+    : res.status === 429 ? "TooManyChecks"
+    : res.status === 401 ? "Unauthorized"
+    : res.status === 400 ? "BadRequest"
+    : res.status === 503 ? "SourcesFailed"
+    : "Unavailable";
+  throw new ApiError(res.status, kind);
+}
+
 // ---- public routes ----
 
 export const api = {
@@ -268,6 +344,24 @@ export const api = {
     get<RawOffer>("/packages/offer", { ...searchParams(q, market), ...offerFilters(f), hotel, flight, room, flightLimit: 12 }),
   transfers: (q: SearchQuery, f: SearchFilters, market: string, hotel: string, flight?: string) =>
     get<RawTransfers>("/packages/offer/transfers", { ...searchParams(q, market), ...offerFilters(f), hotel, flight }),
+  checkout: {
+    /** Live price check of the chosen package. Spends supplier calls unless the key + choice match a live session. */
+    start: (c: CheckoutChoice, idempotencyKey: string) =>
+      post(
+        "/checkout",
+        {
+          from: c.q.from, to: c.q.to, depart: c.q.depart, nights: c.q.nights, adults: c.q.adults, childAges: c.q.childAges,
+          bags: c.f.bags, direct: !!c.f.direct, refundable: !!c.f.refundable, minStars: c.f.minStars ?? null, board: c.f.board ?? null,
+          market: c.market, hotel: c.hotel, flight: c.flight ?? null, room: c.room ?? null, transfer: c.transfer ?? null,
+        },
+        { "Idempotency-Key": idempotencyKey },
+      ),
+    get: (id: string) => getCheckout(id),
+    /** At "Betala": checks again only if the last check is old or the hold is about to run out. */
+    revalidate: (id: string) => post(`/checkout/${encodeURIComponent(id)}/revalidate`, {}),
+    /** The customer accepts a changed total. The total must come from the session, never the browser. */
+    confirm: (id: string, total: number) => post(`/checkout/${encodeURIComponent(id)}/confirm`, { total }),
+  },
 };
 
 /** Offer and transfers take the search's filters, not its sort/paging. */

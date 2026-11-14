@@ -10,6 +10,7 @@ import { parseSearch, toParams, type SP } from "@/lib/server/search-params";
 import { mapCardImages, mapSearch, type ResultCard } from "@/lib/server/view";
 import { SearchFormLoader, SearchFormSkeleton } from "@/components/search-form-loader";
 import { TestModeNote } from "@/components/test-mode-note";
+import { SoldOutNote } from "@/components/sold-out-note";
 import { Stars } from "@/components/stars";
 import { ButtonLink } from "@/components/ui/button";
 import { dateLong, money, nightsLabel, party } from "@/lib/format";
@@ -30,9 +31,11 @@ export default function SearchPage({ params, searchParams }: PageProps<"/[brand]
 async function SearchContent({ params, searchParams }: { params: Promise<{ brand: string }>; searchParams: Promise<SP> }) {
   await connection(); // request-time: reads the clock and calls the API
   const brand = getBrand((await params).brand)!;
-  const { query, filters, valid } = parseSearch(await searchParams, brand.defaultOrigin);
+  const sp = await searchParams;
+  const { query, filters, valid } = parseSearch(sp, brand.defaultOrigin);
   return (
     <>
+      <SoldOutNote what={sp.slutsalt} />
       <Suspense fallback={<SearchFormSkeleton variant="bar" />}>
         <SearchFormLoader values={query} variant="bar" />
       </Suspense>
