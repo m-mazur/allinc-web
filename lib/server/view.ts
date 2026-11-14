@@ -197,6 +197,8 @@ export type OfferView = {
     price: Price;
     perPerson: Price;
     payAtHotel: Price | null;
+    /** The airline wants passport details at booking. */
+    passportRequired: boolean;
   };
   rooms: RoomChoice[];
   flights: FlightChoice[];
@@ -263,6 +265,7 @@ export function mapOffer(raw: RawOffer, content: RawContent | null, ref: { q: Se
       price: price(sel.price),
       perPerson: { amount: Math.round(sel.price.amount / travellers), currency: sel.price.currency },
       payAtHotel: sel.payAtHotelInMarketCurrency ? price(sel.payAtHotelInMarketCurrency) : null,
+      passportRequired: raw.flights[sel.flightToken]?.identityDocumentsRequired === true,
     },
     rooms,
     flights: raw.flightOptions.map((o) => ({

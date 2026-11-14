@@ -15,12 +15,13 @@ import type { Price } from "../format";
 
 type Trip = { q: SearchQuery; f: SearchFilters; h: string; fl?: string; r?: string };
 /** What the browser carries through checkout: the API's checkout id, the trip, the transfer in it, the total last shown. */
-type CheckoutRef = { id: string; trip: Trip; m: string; tr: string | null; shown: number; t: number };
+/** pp: the flight needs passport details (decides which traveller fields are required). */
+type CheckoutRef = { id: string; trip: Trip; m: string; pp: boolean; tr: string | null; shown: number; t: number };
 const CHECKOUT = "checkout.v1";
 const MAX_AGE_MS = 2 * 3600_000;
 
-export function sealCheckout(id: string, trip: Trip, market: string, transfer: string | null, shownTotal: number): string {
-  return seal(CHECKOUT, { id, trip, m: market, tr: transfer, shown: shownTotal, t: Date.now() } satisfies CheckoutRef);
+export function sealCheckout(id: string, trip: Trip, market: string, passportRequired: boolean, transfer: string | null, shownTotal: number): string {
+  return seal(CHECKOUT, { id, trip, m: market, pp: passportRequired, tr: transfer, shown: shownTotal, t: Date.now() } satisfies CheckoutRef);
 }
 
 export function openCheckout(token: string): CheckoutRef | null {
@@ -62,7 +63,7 @@ async function allowNewCheck(): Promise<boolean> {
 const idempotencyKey = (trip: Trip, transfer: string | null, attempt: string) =>
   createHash("sha256").update(JSON.stringify([trip.q, trip.f, trip.h, trip.fl ?? null, trip.r ?? null, transfer, attempt])).digest("base64url");
 
-export type CheckoutOutcome = { view: CheckoutView; ref: string | null };
+export type CheckoutOutcome = { view: CheckoutView | null; ref: string | null; errors?: Record<string, string> };
 
 /**
  * Start (or rejoin) a checkout for this trip and transfer. The same trip + transfer in the same hour
@@ -70,12 +71,12 @@ export type CheckoutOutcome = { view: CheckoutView; ref: string | null };
  */
 export type { CheckoutRef };
 
-export async function startCheckout(trip: Trip, market: string, transfer: string | null, fresh = false): Promise<CheckoutOutcome> {
+export async function startCheckout(trip: Trip, market: string, passportRequired: boolean, transfer: string | null, fresh = false): Promise<CheckoutOutcome> {
   const attempt = fresh ? String(Date.now()) : new Date().toISOString().slice(0, 13);
   if (!(await allowNewCheck())) return { view: problem("busy"), ref: null };
   try {
     const raw = await api.checkout.start({ q: trip.q, f: trip.f, market, hotel: trip.h, flight: trip.fl, room: trip.r, transfer }, idempotencyKey(trip, transfer, attempt));
-    return outcome(raw, trip, market, transfer);
+    return outcome(raw, trip, market, passportRequired, transfer);
   } catch (e) {
     // A 404 here means no checkout route (an older API), not an expired session.
     return { view: problem(e instanceof ApiError && e.kind === "NotFound" ? "cannot" : e), ref: null };
@@ -84,7 +85,7 @@ export async function startCheckout(trip: Trip, market: string, transfer: string
 
 export async function revalidateCheckout(ref: CheckoutRef): Promise<CheckoutOutcome> {
   try {
-    return outcome(await api.checkout.revalidate(ref.id), ref.trip, ref.m, ref.tr);
+    return outcome(await api.checkout.revalidate(ref.id), ref.trip, ref.m, ref.pp, ref.tr);
   } catch (e) {
     if (e instanceof ApiError && e.kind === "NotFound") return { view: problem("expired"), ref: null };
     return { view: problem(e), ref: null };
@@ -94,12 +95,12 @@ export async function revalidateCheckout(ref: CheckoutRef): Promise<CheckoutOutc
 /** Accept a changed total: the total sent is the one we sealed when we showed it, never a browser value. */
 export async function confirmCheckout(ref: CheckoutRef): Promise<CheckoutOutcome> {
   try {
-    return outcome(await api.checkout.confirm(ref.id, ref.shown), ref.trip, ref.m, ref.tr);
+    return outcome(await api.checkout.confirm(ref.id, ref.shown), ref.trip, ref.m, ref.pp, ref.tr);
   } catch (e) {
     if (e instanceof ApiError && e.kind === "TotalMismatch") {
       // The price moved again since it was shown: show the session as it is now.
       try {
-        return outcome(await api.checkout.get(ref.id), ref.trip, ref.m, ref.tr);
+        return outcome(await api.checkout.get(ref.id), ref.trip, ref.m, ref.pp, ref.tr);
       } catch (e2) {
         return { view: problem(e2), ref: null };
       }
@@ -108,8 +109,8 @@ export async function confirmCheckout(ref: CheckoutRef): Promise<CheckoutOutcome
   }
 }
 
-function outcome(raw: RawCheckout, trip: Trip, market: string, transfer: string | null): CheckoutOutcome {
-  return { view: mapCheckout(raw, trip), ref: sealCheckout(raw.checkoutId, trip, market, transfer, raw.total.amount) };
+function outcome(raw: RawCheckout, trip: Trip, market: string, passportRequired: boolean, transfer: string | null): CheckoutOutcome {
+  return { view: mapCheckout(raw, trip), ref: sealCheckout(raw.checkoutId, trip, market, passportRequired, transfer, raw.total.amount) };
 }
 
 // ---------- public view ----------

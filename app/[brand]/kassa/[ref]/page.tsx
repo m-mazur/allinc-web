@@ -12,11 +12,12 @@ import { CheckoutState } from "@/components/checkout/checkout-state";
 import { CheckoutTotal, PayPanel } from "@/components/checkout/checkout-summary";
 import { SessionInit } from "@/components/checkout/session-init";
 import { TransferPicker } from "@/components/checkout/transfer-picker";
+import { TravellerForm } from "@/components/checkout/traveller-form";
 import { FlightLine } from "@/components/flight-line";
 import { TestModeNote } from "@/components/test-mode-note";
 import { ButtonLink } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { dateLong, nightsLabel, party } from "@/lib/format";
+import { addDays, dateLong, nightsLabel, party } from "@/lib/format";
 
 export const metadata: Metadata = { title: "Kassa", robots: { index: false } };
 
@@ -61,7 +62,7 @@ async function Checkout({ params }: { params: Promise<{ brand: string; ref: stri
   const travellers = o.trip.adults + o.trip.children;
 
   return (
-    <CheckoutState>
+    <CheckoutState travellers={travellers}>
       <Link href={`/resa/${o.ref}`} className="mb-4 inline-flex items-center gap-1 text-sm font-medium text-primary hover:underline">
         <ArrowLeft className="size-4" aria-hidden /> Tillbaka till resan
       </Link>
@@ -75,10 +76,16 @@ async function Checkout({ params }: { params: Promise<{ brand: string; ref: stri
               <h2 className="text-lg">Transfer till hotellet</h2>
             </div>
             <Suspense fallback={<TransferLoading />}>
-              <LiveCheckout trip={ref} market={brand.market} />
+              <LiveCheckout trip={ref} market={brand.market} passportRequired={s.passportRequired} />
             </Suspense>
           </Card>
-          <Travellers adults={o.trip.adults} childAges={ref.q.childAges} />
+          <TravellerForm
+            adults={o.trip.adults}
+            childAges={ref.q.childAges}
+            depart={ref.q.depart}
+            returnDate={addDays(ref.q.depart, ref.q.nights)}
+            passportRequired={s.passportRequired}
+          />
         </div>
         <aside className="lg:sticky lg:top-20 lg:self-start">
           <Card className="space-y-4 p-5">
@@ -107,16 +114,16 @@ async function Checkout({ params }: { params: Promise<{ brand: string; ref: stri
 }
 
 /** Loads the transfer suggestion, then checks the whole package live with the suggested transfer. */
-async function LiveCheckout({ trip, market }: { trip: NonNullable<ReturnType<typeof openTripRef>>; market: string }) {
+async function LiveCheckout({ trip, market, passportRequired }: { trip: NonNullable<ReturnType<typeof openTripRef>>; market: string; passportRequired: boolean }) {
   const raw: RawTransfers | ApiError = await api.transfers(trip.q, trip.f, market, trip.h, trip.fl).catch((e: ApiError) => e);
   const transfers = raw instanceof ApiError ? null : mapTransfers(raw);
   const rec = raw instanceof ApiError ? null : raw.recommended;
   const recView = transfers?.options.find((o) => o.recommended) ?? null;
 
   const t = { q: trip.q, f: trip.f, h: trip.h, fl: trip.fl, r: trip.r };
-  const first = await startCheckout(t, market, rec?.optionId ?? null);
+  const first = await startCheckout(t, market, passportRequired, rec?.optionId ?? null);
   // A failed first check still gets a ref (no checkout id), so "Kontrollera priset igen" can start one.
-  const session = { view: first.view, ref: first.ref ?? sealCheckout("", t, market, rec?.optionId ?? null, 0), transferId: recView?.id ?? null };
+  const session = { view: first.view!, ref: first.ref ?? sealCheckout("", t, market, passportRequired, rec?.optionId ?? null, 0), transferId: recView?.id ?? null };
   const chosen = recView ? { id: recView.id, title: recView.title, price: recView.price } : null;
 
   return (
@@ -156,46 +163,5 @@ function TransferLoading() {
         ))}
       </div>
     </div>
-  );
-}
-
-function Travellers({ adults, childAges }: { adults: number; childAges: number[] }) {
-  const people = [
-    ...Array.from({ length: adults }, (_, i) => `Vuxen ${i + 1}`),
-    ...childAges.map((a, i) => `Barn ${i + 1} (${a} år)`),
-  ];
-  const input = "mt-1 h-11 w-full rounded-control border border-line bg-surface px-3 text-ink focus:border-primary focus:outline-2 focus:outline-primary/30";
-  return (
-    <Card className="p-5">
-      <h2 className="text-lg">Resenärer</h2>
-      <p className="text-sm text-muted">Namn som i passet. (Förhandsversion: inget skickas.)</p>
-      {/* Not a <form>: a plain submit would put names in the URL. Booking will post to a server action. */}
-      <div className="mt-4 space-y-5">
-        {people.map((label, i) => (
-          <fieldset key={label} className="grid gap-3 sm:grid-cols-2">
-            <legend className="mb-2 text-sm font-semibold">{label}</legend>
-            <label className="text-sm text-muted">
-              Förnamn
-              <input className={input} name={`p${i}-first`} autoComplete={i === 0 ? "given-name" : "off"} />
-            </label>
-            <label className="text-sm text-muted">
-              Efternamn
-              <input className={input} name={`p${i}-last`} autoComplete={i === 0 ? "family-name" : "off"} />
-            </label>
-          </fieldset>
-        ))}
-        <fieldset className="grid gap-3 sm:grid-cols-2">
-          <legend className="mb-2 text-sm font-semibold">Kontakt</legend>
-          <label className="text-sm text-muted">
-            E-post
-            <input className={input} type="email" name="email" autoComplete="email" />
-          </label>
-          <label className="text-sm text-muted">
-            Mobil
-            <input className={input} type="tel" name="phone" autoComplete="tel" />
-          </label>
-        </fieldset>
-      </div>
-    </Card>
   );
 }

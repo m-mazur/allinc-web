@@ -25,4 +25,8 @@ header, so the brand segment is never chosen by the visitor. Paths are Swedish.
   SoldOut: link to the offer (`?slutsalt=flyg|rum`) or results (`?slutsalt=hotell`), which show
   `SoldOutNote`; a sold-out transfer stays in checkout. Expired / CannotConfirm / busy: "Kontrollera
   priset igen" (`recheckAction`). Payment itself is not built: an Ok after "Till betalning" says so.
+- "Till betalning" first validates the traveller details (`lib/travellers.ts`) on the server; field
+  errors come back without any supplier call. Passport fields only when the flight needs them
+  (`selected.passportRequired`, sealed into the checkout ref as `pp`). What each supplier needs:
+  `docs/BOOKING-DATA.md`. Traveller data is never logged, stored, sealed or put in a URL.
 - New page that shows API data: add its path to `scripts/check-leaks.sh`.

@@ -2,6 +2,7 @@
 
 import { createContext, useContext, useState, type ReactNode } from "react";
 import type { Price } from "@/lib/format";
+import type { BookingInput, Errors } from "@/lib/travellers";
 
 // Client state for checkout: the chosen transfer and the latest price check from the server.
 // Prices here are customer prices the server worked out; nothing is priced in the browser, and the
@@ -31,14 +32,30 @@ type Ctx = {
   setSession: (s: Session) => void;
   /** true until the first check has come back */
   checking: boolean;
+  /** Traveller details: kept in memory only (no storage, no URL) and sent with "Till betalning". */
+  booking: BookingInput;
+  setBooking: (b: BookingInput) => void;
+  errors: Errors;
+  setErrors: (e: Errors) => void;
 };
 const C = createContext<Ctx | null>(null);
 
-export function CheckoutState({ children }: { children: ReactNode }) {
+const blankTraveller = { gender: "" as const, givenName: "", familyName: "", bornOn: "", passportNumber: "", passportCountry: "SE", passportExpires: "" };
+
+export function CheckoutState({ travellers, children }: { travellers: number; children: ReactNode }) {
   const [transfer, setTransfer] = useState<ChosenTransfer>(null);
   const [session, setSessionState] = useState<Session | null>(null);
+  const [booking, setBooking] = useState<BookingInput>(() => ({
+    travellers: Array.from({ length: travellers }, () => ({ ...blankTraveller })),
+    email: "",
+    phone: "",
+    remark: "",
+  }));
+  const [errors, setErrors] = useState<Errors>({});
   return (
-    <C.Provider value={{ transfer, setTransfer, session, setSession: setSessionState, checking: session === null }}>{children}</C.Provider>
+    <C.Provider value={{ transfer, setTransfer, session, setSession: setSessionState, checking: session === null, booking, setBooking, errors, setErrors }}>
+      {children}
+    </C.Provider>
   );
 }
 

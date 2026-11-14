@@ -67,6 +67,7 @@ export type RawSegment = {
 };
 export type RawFlight = {
   airline: CodeName;
+  identityDocumentsRequired?: boolean;
   price: Money;
   journeys: { origin: RawPlace; destination: RawPlace; duration: string; stops: number; segments: RawSegment[] }[];
 };

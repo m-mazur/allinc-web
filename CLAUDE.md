@@ -55,6 +55,8 @@ compose's api casually: a fresh API cache means live Hotelbeds calls.
 5. The web does not cache search results or prices (the API owns caching); `fetch` uses `no-store`.
 6. No `NEXT_PUBLIC_*` variables. `WEB_SEAL_KEY` and `ALLINC_WEB_KEY` are required in production.
    Amounts to pay come only from the API's checkout session, never from the browser.
+   **Traveller personal data** (names, birth dates, passport, contact) is never logged, stored,
+   cached, sealed or put in a URL; it lives in checkout page memory until the booking call.
 7. **Hotelbeds quota is ~50/day (API caps 40; searches stop at 30, 10 are kept for checkout checks)**:
    build and test pages in `replay` mode; use `record` only with Marcus's OK.
 8. **Git:** `/usr/bin/git` only; other threads may be editing: commit only your own files.

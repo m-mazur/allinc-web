@@ -45,16 +45,25 @@ export function CheckoutTotal({ base, travellers }: { base: Price; travellers: n
 
 /** Price-check status and the actions it allows: pay, accept a new price, check again, or go elsewhere. */
 export function PayPanel() {
-  const { transfer, session, setSession, setTransfer, checking } = useCheckout();
+  const { transfer, session, setSession, setTransfer, checking, booking, errors, setErrors } = useCheckout();
   const [pending, start] = useTransition();
   const [paid, setPaid] = useState(false);
   const transferId = transfer?.id ?? null;
 
   // isPay: the customer pressed "Till betalning" or accepted a new price; an Ok answer then means
   // the price is locked and payment would start (not built yet).
-  const run = (fn: () => Promise<{ view: Session["view"]; ref: string | null }>, isPay: boolean) =>
+  const run = (fn: () => Promise<{ view: Session["view"] | null; ref: string | null; errors?: Record<string, string> }>, isPay: boolean) =>
     start(async () => {
       const r = await fn();
+      if (r.errors) {
+        // Traveller details need fixing: show them by the fields and go to the first one.
+        setErrors(r.errors);
+        const first = Object.keys(r.errors)[0];
+        document.getElementById(`f-${first}`)?.focus();
+        return;
+      }
+      setErrors({});
+      if (!r.view) return;
       // Keep the last good ref when a check fails, so "Kontrollera priset igen" can continue from it.
       setSession({ view: r.view, ref: r.ref ?? session!.ref, transferId: r.ref ? transferId : session!.transferId });
       setPaid(isPay && r.view.status === "ok");
@@ -73,12 +82,13 @@ export function PayPanel() {
     <div className="space-y-3">
       {sameChoice && <StatusBox view={v} paid={paid} />}
       {!sameChoice && <p className="text-xs text-muted">Du har ändrat transfer. Vi kontrollerar priset igen när du går vidare.</p>}
+      {Object.keys(errors).length > 0 && <p className="text-xs font-bold text-danger">Kontrollera resenärsuppgifterna: {Object.keys(errors).length} fält behöver rättas.</p>}
 
       {(v.status === "ok" || !sameChoice) && !paid && (
         <button
           type="button"
           disabled={pending}
-          onClick={() => run(() => payAction(session!.ref, transferId), true)}
+          onClick={() => run(() => payAction(session!.ref, transferId, booking), true)}
           className={btn}
         >
           {pending ? <Loader2 className="size-5 animate-spin" aria-hidden /> : null}
@@ -148,7 +158,7 @@ function StatusBox({ view: v, paid }: { view: Session["view"]; paid: boolean }) 
       <p className={v.status === "ok" ? "text-ink/80" : ""}>{v.message}</p>
       {v.status === "ok" && !paid && v.expiresAt && <p className="text-xs text-ink/70">Vi håller priset till kl {new Date(v.expiresAt).toLocaleTimeString("sv-SE", { hour: "2-digit", minute: "2-digit" })}.</p>}
       {v.status === "ok" && paid && (
-        <p className="text-ink/80">Det här är en förhandsversion: betalning är inte påslagen, inget dras och inget bokas.</p>
+        <p className="text-ink/80">Resenärsuppgifterna är kompletta. Det här är en förhandsversion: betalning är inte påslagen, inget dras och inget bokas.</p>
       )}
     </div>
   );

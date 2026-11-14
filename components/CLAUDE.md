@@ -6,7 +6,9 @@
   test-mode note.
 - `checkout/`: client state (chosen transfer + latest price check, `checkout-state.tsx`),
   `SessionInit` (hands the server's first check to the client), `CheckoutTotal` + `PayPanel`
-  (status box and buttons calling the server actions), transfer picker. `sold-out-note.tsx`: the
+  (status box and buttons calling the server actions), transfer picker, `TravellerForm` (traveller
+  details the suppliers need; rules in `lib/travellers.ts`, sources in `docs/BOOKING-DATA.md`;
+  personal data stays in memory, never storage or URLs). `sold-out-note.tsx`: the
   banner on offer/results after a sold-out redirect.
 
 ## Rules

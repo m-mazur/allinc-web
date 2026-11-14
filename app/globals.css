@@ -16,6 +16,7 @@
   --color-surface: var(--brand-surface);
   --color-canvas: var(--brand-canvas);
   --color-success: var(--brand-success);
+  --color-danger: var(--brand-danger);
   --color-panel: var(--brand-panel);
   --color-rating: var(--brand-rating);
   --color-star: var(--brand-star);
