@@ -160,7 +160,13 @@ export function mapCheckout(raw: RawCheckout, trip: Trip): CheckoutView {
   const base = { total: { amount: raw.total.amount, currency: raw.total.currency }, previousTotal: null, expiresAt: raw.expiresAt, lines, soldOutHref: null };
   switch (raw.status) {
     case "Ok":
-      return { ...base, status: "ok", title: "Priset är bekräftat", message: "Vi har kontrollerat flyg, hotell och transfer just nu.", canPay: true };
+      return {
+        ...base,
+        status: "ok",
+        title: "Priset är bekräftat",
+        message: raw.lines.some((l) => l.product === "Transfer") ? "Vi har kontrollerat flyg, hotell och transfer just nu." : "Vi har kontrollerat flyg och hotell just nu.",
+        canPay: true,
+      };
     case "Changed":
       return {
         ...base,

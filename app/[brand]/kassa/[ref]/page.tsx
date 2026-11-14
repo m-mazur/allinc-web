@@ -113,22 +113,21 @@ async function Checkout({ params }: { params: Promise<{ brand: string; ref: stri
   );
 }
 
-/** Loads the transfer suggestion, then checks the whole package live with the suggested transfer. */
+/** Loads the transfer options, then checks the package live (flight + hotel, no transfer yet). */
 async function LiveCheckout({ trip, market, passportRequired }: { trip: NonNullable<ReturnType<typeof openTripRef>>; market: string; passportRequired: boolean }) {
   const raw: RawTransfers | ApiError = await api.transfers(trip.q, trip.f, market, trip.h, trip.fl).catch((e: ApiError) => e);
   const transfers = raw instanceof ApiError ? null : mapTransfers(raw);
-  const rec = raw instanceof ApiError ? null : raw.recommended;
-  const recView = transfers?.options.find((o) => o.recommended) ?? null;
 
   const t = { q: trip.q, f: trip.f, h: trip.h, fl: trip.fl, r: trip.r };
-  const first = await startCheckout(t, market, passportRequired, rec?.optionId ?? null);
+  // Start without a transfer, so the checkout total is the price the customer saw on the offer page.
+  // The transfer is an add-on they choose; picking one is checked at "Till betalning".
+  const first = await startCheckout(t, market, passportRequired, null);
   // A failed first check still gets a ref (no checkout id), so "Kontrollera priset igen" can start one.
-  const session = { view: first.view!, ref: first.ref ?? sealCheckout("", t, market, passportRequired, rec?.optionId ?? null, 0), transferId: recView?.id ?? null };
-  const chosen = recView ? { id: recView.id, title: recView.title, price: recView.price } : null;
+  const session = { view: first.view!, ref: first.ref ?? sealCheckout("", t, market, passportRequired, null, 0), transferId: null };
 
   return (
     <>
-      <SessionInit session={session} transfer={chosen} />
+      <SessionInit session={session} transfer={null} />
       {!transfers ? (
         <p className="mt-3 text-sm text-muted">
           {raw instanceof ApiError && raw.kind === "SourcesFailed" ? "Transfer går inte att hämta just nu." : "Vi kunde inte hämta transfer just nu."} Resan går att boka utan.

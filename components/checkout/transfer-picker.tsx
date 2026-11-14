@@ -22,6 +22,12 @@ type Option = {
 export function TransferPicker({ options, reason, airport, arrival, note }: { options: Option[]; reason: string; airport: string; arrival: string; note: string | null }) {
   const { transfer, setTransfer } = useCheckout();
 
+  // Prices are shown the way rooms and flights are: as what choosing this option changes. With no
+  // transfer chosen every option is "+its price"; with one chosen, the others are +/- against it.
+  const current = transfer?.price.amount ?? 0;
+  const currency = options[0]?.price.currency ?? "SEK";
+  const delta = (amount: number) => ({ amount: amount - current, currency });
+
   const choose = (o: Option | null) => setTransfer(o ? { id: o.id, title: o.title, price: o.price } : null);
 
   return (
@@ -80,7 +86,7 @@ export function TransferPicker({ options, reason, airport, arrival, note }: { op
                 </span>
               </span>
               <span className="shrink-0 text-right">
-                <span className="block font-bold tabular-nums">{money(o.price)}</span>
+                <span className="block font-bold tabular-nums">{on ? money(o.price) : money(delta(o.price.amount), { sign: true })}</span>
                 {on && <Check className="ml-auto mt-1 size-4 text-primary" aria-hidden />}
               </span>
             </button>
@@ -96,7 +102,10 @@ export function TransferPicker({ options, reason, airport, arrival, note }: { op
             transfer === null ? "border-primary ring-2 ring-primary/25" : "border-line hover:border-primary/50",
           )}
         >
-          Ingen transfer, vi tar oss till hotellet själva
+          <span className="flex items-center justify-between gap-3">
+            <span>Ingen transfer, vi tar oss till hotellet själva</span>
+            {transfer && <span className="font-bold tabular-nums">{money(delta(0), { sign: true })}</span>}
+          </span>
         </button>
       </div>
     </div>

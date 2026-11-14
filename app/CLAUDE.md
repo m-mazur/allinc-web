@@ -17,9 +17,12 @@ header, so the brand segment is never chosen by the visitor. Paths are Swedish.
   expired one is `notFound()`, never an error page with details.
 - Each page: a static shell + `<Suspense>` around an async part that starts with `await connection()`.
 - Slow or optional calls (content, transfers) get their own Suspense so they never block prices.
-- The transfer suggestion is a checkout upsell; it never changes the package price shown before.
+- The transfer is an add-on: checkout starts with **no transfer** (total = the offer price) and the
+  first live check is flight + hotel only. Options show "+price"; once one is chosen, the others show
+  +/- against it and "Ingen transfer" shows the minus, like room and flight swaps. "Vårt förslag" is a
+  badge, never a preselection.
 - Checkout flow (contract: `../allinc/backend/docs/CHECKOUT-VALIDATION.md`, "As built"):
-  page load checks the package with the suggested transfer (`startCheckout`) → "Till betalning"
+  page load checks the package without a transfer (`startCheckout`) → "Till betalning"
   (`payAction`) revalidates, or starts a new check if the transfer was changed → pay only on Ok.
   Changed: show old → new and "Godkänn nytt pris" (`confirmAction`, total from the sealed ref).
   SoldOut: link to the offer (`?slutsalt=flyg|rum`) or results (`?slutsalt=hotell`), which show

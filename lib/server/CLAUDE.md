@@ -7,7 +7,8 @@ Every file starts with `import "server-only"`. Nothing here may be imported by a
   `Idempotency-Key` and `X-Allinc-Web-Key` (`ALLINC_WEB_KEY`, = the API's `Checkout:WebKey`). `Raw*` types are API shapes and never leave this folder.
   Modes via `ALLINC_API_MODE`: `live`, `record` (saves to `dev/fixtures`), `replay` (offline;
   offer/transfers fall back to any recorded hotel; filters and swaps are not re-applied; checkout
-  answers from `dev/fixtures/checkout/`: first check Ok, "Till betalning" per
+  answers from `dev/fixtures/checkout/` (statuses; amounts taken from the recorded offer and
+  transfer fixtures for the chosen hotel, so they match the offer page): first check Ok, "Till betalning" per
   `ALLINC_REPLAY_CHECKOUT` = ok | changed | soldout-flight | soldout-room | soldout-hotel |
   soldout-transfer | cannotconfirm | expired).
 - `checkout.ts`: the checkout flow and its Swedish copy. Sealed checkout ref (`checkout.v1`: API

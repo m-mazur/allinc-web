@@ -273,18 +273,42 @@ async function get<T>(route: string, p: Params, timeoutMs = 45_000): Promise<T> 
 
 // ---- checkout (POST, JSON) ----
 
+// Replay checkout: statuses come from dev/fixtures/checkout, amounts from the recorded offer and
+// transfer fixtures for the chosen hotel, so checkout matches what the offer page showed.
+let replayLast: { hotel?: string; transfer?: string | null } = {};
+
 async function replayCheckout(route: string, body: unknown): Promise<RawCheckout> {
-  // dev/fixtures/checkout: start.json is the first check; revalidate-<scenario>.json answers "Betala",
-  // scenario from ALLINC_REPLAY_CHECKOUT (ok | changed | soldout-flight | soldout-room | soldout-hotel |
-  // soldout-transfer | cannotconfirm | expired). Confirm answers Ok at the confirmed total.
+  // revalidate-<scenario>.json answers "Till betalning": ALLINC_REPLAY_CHECKOUT = ok | changed |
+  // soldout-flight | soldout-room | soldout-hotel | soldout-transfer | cannotconfirm | expired.
   await new Promise((r) => setTimeout(r, 1200));
+  if (route === "/checkout") replayLast = body as typeof replayLast;
   const dir = path.join(env.fixturesDir, "checkout");
   const read = async (f: string) => JSON.parse(await readFile(path.join(dir, f), "utf8")) as RawCheckout;
-  if (route.endsWith("/revalidate")) return read(`revalidate-${process.env.ALLINC_REPLAY_CHECKOUT ?? "ok"}.json`);
-  const start = await read("start.json");
+
+  const offer = ((await replay("/packages/offer", { hotel: replayLast.hotel })) as { data: RawOffer & { selected: { flightPrice: Money; hotelPrice: Money } } }).data;
+  const amounts: Record<string, Money | null> = { Flight: offer.selected.flightPrice, Hotel: offer.selected.hotelPrice, Transfer: null };
+  if (replayLast.transfer) {
+    const tr = ((await replay("/packages/offer/transfers", { hotel: replayLast.hotel })) as { data: RawTransfers }).data;
+    amounts.Transfer = tr.options.find((o) => o.optionId === replayLast.transfer)?.price ?? null;
+  }
+  const fit = (r: RawCheckout): RawCheckout => {
+    const lines = r.lines
+      .filter((l) => amounts[l.product])
+      .map((l) => {
+        const base = amounts[l.product]!;
+        const bump = l.previousPrice ? l.price.amount - l.previousPrice.amount : 0; // the fixture's price change
+        return { ...l, price: { ...base, amount: base.amount + bump }, previousPrice: l.previousPrice ? base : null };
+      });
+    const total = lines.reduce((n, l) => n + l.price.amount, 0);
+    const prev = lines.reduce((n, l) => n + (l.previousPrice ?? l.price).amount, 0);
+    return { ...r, total: { amount: total, currency: r.currency }, previousTotal: r.previousTotal ? { amount: prev, currency: r.currency } : null, lines };
+  };
+
+  if (route.endsWith("/revalidate")) return fit(await read(`revalidate-${process.env.ALLINC_REPLAY_CHECKOUT ?? "ok"}.json`));
+  const start = fit(await read("start.json"));
   if (route.endsWith("/confirm")) {
     const total = (body as { total: number }).total;
-    return { ...start, status: "Ok", total: { amount: total, currency: start.currency }, previousTotal: null, lines: start.lines.map((l) => ({ ...l, status: "Confirmed" as const, previousPrice: null, changes: [] })) };
+    return { ...start, status: "Ok", total: { amount: total, currency: start.currency }, previousTotal: null };
   }
   return start;
 }
