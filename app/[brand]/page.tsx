@@ -4,6 +4,7 @@ import { connection } from "next/server";
 import { BadgeCheck, Sun, UtensilsCrossed, Users, Waves } from "lucide-react";
 import { getBrand, type Brand } from "@/brands";
 import { SearchFormLoader, SearchFormSkeleton } from "@/components/search-form-loader";
+import { HeroMedia } from "@/components/hero-media";
 import { defaultValues } from "@/lib/server/defaults";
 import { cn } from "@/lib/cn";
 
@@ -39,13 +40,8 @@ export default async function Home({ params }: PageProps<"/[brand]">) {
 function Hero({ brand }: { brand: Brand }) {
   return (
     <section className="relative mt-2 overflow-hidden rounded-hero bg-[linear-gradient(165deg,var(--brand-hero-from),var(--brand-hero-to))]">
-      {brand.heroImage ? (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img src={brand.heroImage} alt="" className="absolute inset-0 h-full w-full object-cover" />
-      ) : (
-        <HeroArt />
-      )}
-      <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(0,0,0,0.05),rgba(0,0,0,0.22))]" aria-hidden />
+      {brand.hero ? <HeroMedia {...brand.hero} /> : <HeroArt />}
+      <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(0,0,0,0.30),rgba(0,0,0,0.22)_50%,rgba(0,0,0,0.30))]" aria-hidden />
       <div className="relative flex min-h-[400px] flex-col items-center justify-center px-4 py-12 sm:px-6">
         <h1 className="text-center text-4xl text-white [text-shadow:0_2px_12px_rgba(0,0,0,0.25)] sm:text-[44px]">Res bort, allt ingår</h1>
         <p className="mt-2 text-center text-lg font-medium text-white/95 [text-shadow:0_1px_8px_rgba(0,0,0,0.25)]">{brand.tagline}</p>
@@ -118,7 +114,7 @@ function Destinations({ brand }: { brand: Brand }) {
         >
           {d.image ? (
             // eslint-disable-next-line @next/next/no-img-element
-            <img src={d.image} alt="" className="absolute inset-0 h-full w-full object-cover transition-transform duration-500 group-hover:scale-105" />
+            <img src={d.image} alt="" loading="lazy" className="absolute inset-0 h-full w-full object-cover transition-transform duration-500 group-hover:scale-105" />
           ) : (
             <TileArt seed={i} />
           )}
