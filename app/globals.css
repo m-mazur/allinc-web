@@ -1,0 +1,46 @@
+@import "tailwindcss";
+@import "../brands/allinc/theme.css";
+@import "../brands/solkusten/theme.css";
+
+/* Components use these tokens only, never raw colours, so a brand is a theme file. */
+@theme inline {
+  --color-primary: var(--brand-primary);
+  --color-primary-hover: var(--brand-primary-hover);
+  --color-primary-soft: var(--brand-primary-soft);
+  --color-on-primary: var(--brand-on-primary);
+  --color-accent: var(--brand-accent);
+  --color-on-accent: var(--brand-on-accent);
+  --color-ink: var(--brand-ink);
+  --color-muted: var(--brand-muted);
+  --color-line: var(--brand-line);
+  --color-surface: var(--brand-surface);
+  --color-canvas: var(--brand-canvas);
+  --color-success: var(--brand-success);
+  --radius-card: var(--brand-radius-card);
+  --radius-control: var(--brand-radius-control);
+  --font-heading: var(--brand-font-heading);
+  --font-sans: var(--brand-font-body);
+}
+
+body {
+  background: var(--color-canvas);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+}
+
+h1, h2, h3, .font-heading {
+  font-family: var(--font-heading);
+}
+
+.skeleton {
+  background: linear-gradient(90deg, #e9eef1 0%, #f5f8fa 50%, #e9eef1 100%);
+  background-size: 200% 100%;
+  animation: shimmer 1.4s ease-in-out infinite;
+}
+@keyframes shimmer {
+  from { background-position: 200% 0; }
+  to { background-position: -200% 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .skeleton { animation: none; }
+}

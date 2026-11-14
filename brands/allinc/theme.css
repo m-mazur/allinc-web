@@ -1,0 +1,22 @@
+/* Allinc: logo direction D. Sea blue, sun yellow, graphite text. Also the fallback for every token. */
+:root,
+[data-brand="allinc"] {
+  --brand-primary: #1583c7;        /* Sea, deepened for text/button contrast on white */
+  --brand-primary-hover: #106da6;
+  --brand-primary-soft: #e6f3fb;
+  --brand-on-primary: #ffffff;
+  --brand-accent: #ffc629;         /* Sun */
+  --brand-on-accent: #2a3136;
+  --brand-ink: #2a3136;            /* Graphite */
+  --brand-muted: #5b6870;
+  --brand-line: #dfe5e9;
+  --brand-surface: #ffffff;
+  --brand-canvas: #f4f7f9;
+  --brand-success: #1f7a4d;
+  --brand-hero-from: #3db8ee;
+  --brand-hero-to: #1382c8;
+  --brand-radius-card: 18px;
+  --brand-radius-control: 12px;
+  --brand-font-heading: var(--font-quicksand), ui-rounded, system-ui, sans-serif;
+  --brand-font-body: var(--font-inter), system-ui, sans-serif;
+}
