@@ -23,6 +23,16 @@ export type CheckoutViewClient = {
   canPay: boolean;
 };
 
+/** The outcome of a test booking ("Boka testresa"). */
+export type BookingResultClient = {
+  status: "confirmed" | "failed" | "attention" | "pending";
+  title: string;
+  message: string;
+  reference: string | null;
+  lines: { label: string; status: string }[];
+  isTest: boolean;
+};
+
 /** A price check plus the sealed ref to continue it, and which transfer (sealed id) it covers. */
 export type Session = { view: CheckoutViewClient; ref: string; transferId: string | null };
 

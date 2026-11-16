@@ -1,0 +1,2 @@
+{ "reference": "AL-TEST-7K3Q", "status": "Confirmed", "customerMessage": null,
+  "lines": [ { "product": "Flight", "status": "Confirmed" }, { "product": "Hotel", "status": "Confirmed" } ], "isTest": true }

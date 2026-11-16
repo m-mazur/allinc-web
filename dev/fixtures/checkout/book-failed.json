@@ -1,0 +1,2 @@
+{ "reference": "AL-TEST-9F2D", "status": "Failed", "customerMessage": "SoldOut",
+  "lines": [ { "product": "Flight", "status": "Failed" }, { "product": "Hotel", "status": "Undone" } ], "isTest": true }

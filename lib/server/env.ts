@@ -27,6 +27,11 @@ export const env = {
   contentLanguage: process.env.CONTENT_LANGUAGE ?? "en",
   /** Shared secret for the API's /checkout routes (API setting Checkout:WebKey). Required in production. */
   webKey: process.env.ALLINC_WEB_KEY ?? "",
+  /**
+   * Test bookings from the checkout ("Boka testresa", no payment). Off unless ALLINC_TEST_BOOKINGS=1.
+   * The API books only on the suppliers' test systems while no payment provider exists.
+   */
+  testBookings: process.env.ALLINC_TEST_BOOKINGS === "1",
   get sealKey() {
     return sealKey();
   },

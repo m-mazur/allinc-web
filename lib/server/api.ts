@@ -181,6 +181,20 @@ export type RawCheckout = {
 };
 export type CheckoutChoice = { q: SearchQuery; f: SearchFilters; market: string; hotel: string; flight?: string; room?: string; transfer?: string | null };
 
+/** A test booking made from a checked checkout (POST /checkout/{id}/book). Public shape: no supplier data. */
+export type RawBooking = {
+  reference: string;
+  status: "Confirmed" | "Failed" | "NeedsAttention" | "Pending";
+  customerMessage: string | null;
+  lines: { product: "Flight" | "Hotel" | "Transfer"; status: string }[];
+  isTest: boolean;
+};
+export type BookingBody = {
+  lead: { firstName: string; lastName: string; email: string; phone: string; language: string };
+  travellers: { firstName: string; lastName: string; birthDate: string; gender: "m" | "f"; type: "Adult" | "Child"; passport: { number: string; issuingCountry: string; expiresOn: string } | null }[];
+  remark: string;
+};
+
 export class ApiError extends Error {
   constructor(
     public status: number,
@@ -432,6 +446,31 @@ async function checkoutResponse(res: Response): Promise<RawCheckout> {
   throw new ApiError(res.status, kind);
 }
 
+async function postBooking(id: string, body: BookingBody, idempotencyKey: string): Promise<RawBooking> {
+  if (env.apiMode === "replay") {
+    // dev/fixtures/checkout/book-<ALLINC_REPLAY_BOOKING>.json: confirmed | failed | attention
+    await new Promise((r) => setTimeout(r, 2500));
+    const f = path.join(env.fixturesDir, "checkout", `book-${process.env.ALLINC_REPLAY_BOOKING ?? "confirmed"}.json`);
+    return JSON.parse(await readFile(f, "utf8")) as RawBooking;
+  }
+  let res: Response;
+  try {
+    res = await fetch(`${env.apiUrl}/checkout/${encodeURIComponent(id)}/book`, {
+      method: "POST",
+      cache: "no-store",
+      headers: { "content-type": "application/json", accept: "application/json", "Idempotency-Key": idempotencyKey, ...webKey() },
+      body: JSON.stringify(body),
+      // A booking runs three suppliers one after another; give it time, and never retry blindly.
+      signal: AbortSignal.timeout(150_000),
+    });
+  } catch {
+    throw new ApiError(503, "Unavailable");
+  }
+  if (res.ok) return (await res.json()) as RawBooking;
+  const kind = res.status === 404 ? "NotFound" : res.status === 409 ? "TotalMismatch" : res.status === 400 ? "BadRequest" : res.status === 401 ? "Unauthorized" : "Unavailable";
+  throw new ApiError(res.status, kind);
+}
+
 // ---- public routes ----
 
 export const api = {
@@ -462,6 +501,8 @@ export const api = {
     revalidate: (id: string) => post(`/checkout/${encodeURIComponent(id)}/revalidate`, {}),
     /** The customer accepts a changed total. The total must come from the session, never the browser. */
     confirm: (id: string, total: number) => post(`/checkout/${encodeURIComponent(id)}/confirm`, { total }),
+    /** TEST ONLY while there is no payment provider: books the checked package on the suppliers' test systems. */
+    book: (id: string, body: BookingBody, idempotencyKey: string) => postBooking(id, body, idempotencyKey),
   },
 };
 

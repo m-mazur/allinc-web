@@ -1,6 +1,7 @@
 "use server";
 
-import { confirmCheckout, openCheckout, openTransferId, revalidateCheckout, startCheckout, type CheckoutOutcome } from "@/lib/server/checkout";
+import { bookCheckout, confirmCheckout, openCheckout, openTransferId, revalidateCheckout, startCheckout, type CheckoutOutcome } from "@/lib/server/checkout";
+import { env } from "@/lib/server/env";
 import { addDays } from "@/lib/format";
 import { validateBooking, type BookingInput } from "@/lib/travellers";
 
@@ -61,4 +62,18 @@ export async function recheckAction(checkoutRef: string, transferToken: string |
   if (!ref) return expired();
   const transfer = openTransferId(transferToken);
   return startCheckout(ref.trip, ref.m, ref.pp, transferToken && !transfer ? null : transfer, true);
+}
+
+/**
+ * TEST ONLY ("Boka testresa", no payment provider yet; on when ALLINC_TEST_BOOKINGS=1): check the
+ * traveller details and the price exactly like payAction, and when the price is confirmed, book the
+ * package on the suppliers' test systems. Failures are real (sold out, refused) and come back as such.
+ */
+export async function bookAction(checkoutRef: string, transferToken: string | null, booking: BookingInput): Promise<CheckoutOutcome> {
+  if (!env.testBookings) return expired();
+  const checked = await payAction(checkoutRef, transferToken, booking);
+  if (checked.errors || !checked.view || checked.view.status !== "ok" || !checked.ref) return checked;
+  const ref = openCheckout(checked.ref);
+  if (!ref?.id) return expired();
+  return { ...checked, booking: await bookCheckout(ref, booking) };
 }

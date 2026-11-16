@@ -26,6 +26,7 @@ services:
       WEB_SEAL_KEY: ${WEB_SEAL_KEY:?Set WEB_SEAL_KEY in .env (32+ random characters)}
       ALLINC_WEB_KEY: ${CHECKOUT_WEB_KEY:?Set CHECKOUT_WEB_KEY in .env (shared secret web -> api)}
       CONTENT_LANGUAGE: ${CONTENT_LANGUAGE:-en}
+      ALLINC_TEST_BOOKINGS: ${ALLINC_TEST_BOOKINGS:-0}   # 1 = "Boka testresa" (supplier test systems, no payment)
     ports:
       - "3000:3000"
     depends_on:

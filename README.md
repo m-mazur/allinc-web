@@ -6,8 +6,9 @@ Design and decisions: [FOUNDATION.md](FOUNDATION.md).
 
 Built so far: search form -> results -> offer page (swap room or flight) -> checkout, where the
 transfer suggestion streams in and the package is price-checked live with the suppliers through the
-API's `/checkout` routes (Ok / changed price / sold out / could not confirm / expired). Payment and
-booking are not built: nothing is paid or booked.
+API's `/checkout` routes (Ok / changed price / sold out / could not confirm / expired). There is no
+payment step. With `ALLINC_TEST_BOOKINGS=1` the checkout's "Boka testresa" books the trip on the
+suppliers' test systems through the API (`POST /checkout/{id}/book`); otherwise nothing is booked.
 
 ## Run it
 

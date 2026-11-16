@@ -33,6 +33,11 @@ header, so the brand segment is never chosen by the visitor. Paths are Swedish.
   offers "Kontrollera priset igen". The hold is the API session: 20 minutes from the check, or less if
   the flight offer expires sooner. Nothing is held at the suppliers: it is our price promise, and
   "Till betalning" checks live again when the last check is over 10 minutes old.
+- **Test bookings** (no payment provider yet; on only with `ALLINC_TEST_BOOKINGS=1`): the button is
+  "Boka testresa" and calls `bookAction`: traveller details → price check → when Ok,
+  `POST /checkout/{id}/book` with the travellers; the API books on the suppliers' **test systems**
+  only and the panel shows the reference and each part's status (`BookingBox`). Real failures are
+  shown as they happen (sold out, refused, needs attention). A yellow banner says it is a test.
 - "Till betalning" first validates the traveller details (`lib/travellers.ts`) on the server; field
   errors come back without any supplier call. Passport fields only when the flight needs them
   (`selected.passportRequired`, sealed into the checkout ref as `pp`). What each supplier needs:

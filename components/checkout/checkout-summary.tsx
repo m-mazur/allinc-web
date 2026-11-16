@@ -3,10 +3,10 @@
 import Link from "next/link";
 import { useEffect, useState, useTransition } from "react";
 import { AlertTriangle, CheckCircle2, Clock, Loader2 } from "lucide-react";
-import { confirmAction, payAction, recheckAction } from "@/lib/actions/checkout";
+import { bookAction, confirmAction, payAction, recheckAction } from "@/lib/actions/checkout";
 import { money, type Price } from "@/lib/format";
 import { cn } from "@/lib/cn";
-import { useCheckout, type Session } from "./checkout-state";
+import { useCheckout, type BookingResultClient, type Session } from "./checkout-state";
 
 /**
  * The amount to pay. When the latest server check covers the chosen transfer, that check's total
@@ -44,15 +44,17 @@ export function CheckoutTotal({ base, travellers }: { base: Price; travellers: n
 }
 
 /** Price-check status and the actions it allows: pay, accept a new price, check again, or go elsewhere. */
-export function PayPanel() {
+/** testBookings: "Boka testresa" books on the suppliers' test systems (no payment step). */
+export function PayPanel({ testBookings = false }: { testBookings?: boolean }) {
   const { transfer, session, setSession, setTransfer, checking, booking, errors, setErrors } = useCheckout();
   const [pending, start] = useTransition();
   const [paid, setPaid] = useState(false);
+  const [result, setResult] = useState<BookingResultClient | null>(null);
   const transferId = transfer?.id ?? null;
 
   // isPay: the customer pressed "Till betalning" or accepted a new price; an Ok answer then means
   // the price is locked and payment would start (not built yet).
-  const run = (fn: () => Promise<{ view: Session["view"] | null; ref: string | null; errors?: Record<string, string> }>, isPay: boolean) =>
+  const run = (fn: () => Promise<{ view: Session["view"] | null; ref: string | null; errors?: Record<string, string>; booking?: BookingResultClient }>, isPay: boolean) =>
     start(async () => {
       const r = await fn();
       if (r.errors) {
@@ -66,8 +68,12 @@ export function PayPanel() {
       if (!r.view) return;
       // Keep the last good ref when a check fails, so "Kontrollera priset igen" can continue from it.
       setSession({ view: r.view, ref: r.ref ?? session!.ref, transferId: r.ref ? transferId : session!.transferId });
-      setPaid(isPay && r.view.status === "ok");
+      // Test bookings: an Ok check is followed by the booking in the same action; its result replaces the panel.
+      if (r.booking) setResult(r.booking);
+      setPaid(!testBookings && isPay && r.view.status === "ok");
     });
+
+  if (result) return <BookingBox result={result} />;
 
   if (checking)
     return (
@@ -100,12 +106,17 @@ export function PayPanel() {
         <button
           type="button"
           disabled={pending}
-          onClick={() => run(() => payAction(session!.ref, transferId, booking), true)}
+          onClick={() => run(() => (testBookings ? bookAction : payAction)(session!.ref, transferId, booking), true)}
           className={btn}
         >
           {pending ? <Loader2 className="size-5 animate-spin" aria-hidden /> : null}
-          {pending ? "Kontrollerar priset…" : "Till betalning"}
+          {pending ? (testBookings ? "Bokar i testsystemet…" : "Kontrollerar priset…") : testBookings ? "Boka testresa" : "Till betalning"}
         </button>
+      )}
+      {testBookings && (v.status === "ok" || !sameChoice) && !paid && (
+        <p className="text-xs text-muted">
+          Testläge: resan bokas i flygbolagets och hotellets testsystem. Ingen betalning, inget riktigt bokas. Det kan ta upp till en minut.
+        </p>
       )}
       {sameChoice && v.status === "changed" && (
         <>
@@ -209,6 +220,44 @@ function Countdown({ seconds, onExpire }: { seconds: number; onExpire: () => voi
       <span className="sr-only" aria-live="polite">
         {Math.ceil(left / 60)} minuter kvar
       </span>
+    </div>
+  );
+}
+
+/** The test booking's outcome: reference and per-part status, or why it did not go through. */
+function BookingBox({ result: r }: { result: BookingResultClient }) {
+  const tone =
+    r.status === "confirmed" ? "bg-[color-mix(in_srgb,var(--color-success)_10%,white)] text-success"
+    : r.status === "failed" ? "bg-panel text-ink"
+    : "bg-[color-mix(in_srgb,var(--color-accent)_22%,white)] text-ink";
+  const Icon = r.status === "confirmed" ? CheckCircle2 : AlertTriangle;
+  return (
+    <div className={cn("space-y-3 rounded-control p-4 text-sm", tone)} role="status">
+      <p className="flex items-center gap-2 text-base font-bold">
+        <Icon className="size-5 shrink-0" aria-hidden /> {r.title}
+      </p>
+      {r.reference && (
+        <p className="text-ink">
+          Bokningsnummer <span className="font-bold tabular-nums">{r.reference}</span>
+          {r.isTest && <span className="ml-2 rounded bg-accent px-1.5 py-0.5 text-[11px] font-bold uppercase text-on-accent">Test</span>}
+        </p>
+      )}
+      {r.lines.length > 0 && (
+        <ul className="space-y-1 text-ink">
+          {r.lines.map((l) => (
+            <li key={l.label} className="flex justify-between">
+              <span>{l.label}</span>
+              <span className="font-bold">{l.status}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+      <p className="text-ink/80">{r.message}</p>
+      {r.status === "failed" && (
+        <Link href="/" className="block text-center font-bold text-primary hover:underline">
+          Gör en ny sökning
+        </Link>
+      )}
     </div>
   );
 }

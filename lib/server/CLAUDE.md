@@ -3,7 +3,10 @@
 Every file starts with `import "server-only"`. Nothing here may be imported by a client component.
 
 - `api.ts`: typed client, **one function per public API route** (`destinations`, `airports`, `search`,
-  `content`, `offer`, `transfers`, `checkout.start|get|revalidate|confirm`). Checkout calls send
+  `content`, `offer`, `transfers`, `checkout.start|get|revalidate|confirm|book`). `book` (test
+  bookings only) sends the travellers once, Idempotency-Key = sha256(checkout id + "book"), 150 s
+  timeout, never retried; replay answers `dev/fixtures/checkout/book-<ALLINC_REPLAY_BOOKING>.json`
+  (confirmed | failed | attention). Checkout calls send
   `Idempotency-Key` and `X-Allinc-Web-Key` (`ALLINC_WEB_KEY`, = the API's `Checkout:WebKey`). `Raw*` types are API shapes and never leave this folder.
   Modes via `ALLINC_API_MODE`: `live`, `record` (saves to `dev/fixtures`), `replay` (offline;
   offer/transfers fall back to any recorded hotel; filters and swaps are not re-applied; checkout
@@ -22,7 +25,7 @@ Every file starts with `import "server-only"`. Nothing here may be imported by a
 - `seal.ts`: AES-256-GCM sealed refs with a purpose string (`trip.v1`, `img.v1`, `checkout.v1`,
   `transfer.v1`), 24 h expiry for trips.
   Bump the purpose version when a sealed shape changes.
-- `env.ts`: server-only settings. `reference.ts`, `search-params.ts`, `defaults.ts`: search inputs.
+- `env.ts`: server-only settings. `testBookings` (`ALLINC_TEST_BOOKINGS=1`) turns on "Boka testresa". `reference.ts`, `search-params.ts`, `defaults.ts`: search inputs.
 
 ## Security rules
 

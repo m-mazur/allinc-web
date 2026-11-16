@@ -1,7 +1,8 @@
 import "server-only";
 import { createHash } from "node:crypto";
 import { headers } from "next/headers";
-import { api, ApiError, type RawCheckout, type SearchFilters, type SearchQuery } from "./api";
+import { api, ApiError, type BookingBody, type RawBooking, type RawCheckout, type SearchFilters, type SearchQuery } from "./api";
+import { normalisePhone, tidyName, type BookingInput } from "../travellers";
 import { seal, sealStable, unseal, unsealStable } from "./seal";
 import { toParams } from "./search-params";
 import { tripRef } from "./view";
@@ -63,7 +64,7 @@ async function allowNewCheck(): Promise<boolean> {
 const idempotencyKey = (trip: Trip, transfer: string | null, attempt: string) =>
   createHash("sha256").update(JSON.stringify([trip.q, trip.f, trip.h, trip.fl ?? null, trip.r ?? null, transfer, attempt])).digest("base64url");
 
-export type CheckoutOutcome = { view: CheckoutView | null; ref: string | null; errors?: Record<string, string> };
+export type CheckoutOutcome = { view: CheckoutView | null; ref: string | null; errors?: Record<string, string>; booking?: BookingResult };
 
 /**
  * Start (or rejoin) a checkout for this trip and transfer. The same trip + transfer in the same hour
@@ -208,4 +209,69 @@ function problem(e: unknown): CheckoutView {
   if (e === "busy" || (e instanceof ApiError && e.kind === "TooManyChecks"))
     return { ...empty, status: "busy", title: "För många kontroller", message: "Vänta en stund och försök igen, eller gör en ny sökning." };
   return { ...empty, status: "cannotconfirm", title: "Vi kan inte bekräfta priset just nu", message: "Försök igen om en liten stund. Inget har bokats eller dragits." };
+}
+
+// ---------- test booking (no payment provider yet) ----------
+
+export type BookingResult = {
+  status: "confirmed" | "failed" | "attention" | "pending";
+  title: string;
+  message: string;
+  reference: string | null;
+  lines: { label: string; status: string }[];
+  isTest: boolean;
+};
+
+const LINE_SV: Record<string, string> = { Confirmed: "Bokat", Failed: "Gick inte", Undone: "Avbokat igen", Unknown: "Kontrolleras" };
+
+/** Traveller details as the API takes them. Names tidied, phone in E.164. Nothing here is logged. */
+function bookingBody(input: BookingInput, adults: number, passportRequired: boolean): BookingBody {
+  const lead = input.travellers[0];
+  return {
+    lead: { firstName: tidyName(lead.givenName), lastName: tidyName(lead.familyName), email: input.email.trim(), phone: normalisePhone(input.phone), language: "sv" },
+    travellers: input.travellers.map((t, i) => ({
+      firstName: tidyName(t.givenName),
+      lastName: tidyName(t.familyName),
+      birthDate: t.bornOn,
+      gender: t.gender as "m" | "f",
+      type: i < adults ? "Adult" : "Child",
+      passport: passportRequired
+        ? { number: (t.passportNumber ?? "").replace(/\s/g, "").toUpperCase(), issuingCountry: (t.passportCountry ?? "").toUpperCase(), expiresOn: t.passportExpires ?? "" }
+        : null,
+    })),
+    remark: (input.remark ?? "").trim().slice(0, 500),
+  };
+}
+
+/** Book a checkout whose price check is Ok. Only called after validateBooking passed. */
+export async function bookCheckout(ref: CheckoutRef, input: BookingInput): Promise<BookingResult> {
+  const key = createHash("sha256").update(`${ref.id}|book`).digest("base64url");
+  try {
+    const raw = await api.checkout.book(ref.id, bookingBody(input, ref.trip.q.adults, ref.pp), key);
+    return mapBooking(raw);
+  } catch (e) {
+    if (e instanceof ApiError && (e.kind === "TotalMismatch" || e.kind === "NotFound"))
+      return { status: "failed", title: "Priset behöver kontrolleras igen", message: "Kontrollera priset igen och boka sedan. Inget är bokat.", reference: null, lines: [], isTest: true };
+    return { status: "failed", title: "Bokningen gick inte att starta", message: "Försök igen om en liten stund. Inget är bokat och inget har dragits.", reference: null, lines: [], isTest: true };
+  }
+}
+
+function mapBooking(raw: RawBooking): BookingResult {
+  const lines = raw.lines.map((l) => ({ label: PRODUCT_SV[l.product] ?? l.product, status: LINE_SV[l.status] ?? l.status }));
+  const base = { reference: raw.reference, lines, isTest: raw.isTest };
+  switch (raw.status) {
+    case "Confirmed":
+      return { ...base, status: "confirmed", title: raw.isTest ? "Testbokningen är klar" : "Bokningen är klar", message: raw.isTest ? "Bokat i leverantörernas testsystem. Ingen betalning har gjorts." : "Bekräftelsen kommer på e-post." };
+    case "NeedsAttention":
+      return { ...base, status: "attention", title: "Bokningen behöver kontrolleras", message: "En del av resan kunde inte bekräftas direkt. Vi kontrollerar den och hör av oss." };
+    case "Pending":
+      return { ...base, status: "pending", title: "Bokningen pågår", message: "Vi bekräftar med flygbolag och hotell. Det kan ta en liten stund." };
+    default: {
+      const why =
+        raw.customerMessage === "SoldOut" ? "Något i resan tog slut medan vi bokade."
+        : raw.customerMessage === "PriceChanged" ? "Priset ändrades medan vi bokade."
+        : "Bokningen gick inte igenom.";
+      return { ...base, status: "failed", title: "Bokningen gick inte igenom", message: `${why} Inget är bokat och inget har dragits.` };
+    }
+  }
 }

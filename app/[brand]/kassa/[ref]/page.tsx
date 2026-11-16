@@ -5,6 +5,7 @@ import { Suspense } from "react";
 import { connection } from "next/server";
 import { ArrowLeft, Bus } from "lucide-react";
 import { getBrand } from "@/brands";
+import { env } from "@/lib/server/env";
 import { api, ApiError, type RawTransfers } from "@/lib/server/api";
 import { sealCheckout, startCheckout } from "@/lib/server/checkout";
 import { mapOffer, mapTransfers, openTripRef } from "@/lib/server/view";
@@ -67,6 +68,11 @@ async function Checkout({ params }: { params: Promise<{ brand: string; ref: stri
         <ArrowLeft className="size-4" aria-hidden /> Tillbaka till resan
       </Link>
       <h1 className="text-[28px]">Kassa</h1>
+      {env.testBookings && (
+        <p className="mt-3 rounded-control bg-accent px-3 py-2 text-sm font-bold text-on-accent">
+          Testbokning: inget betalas och resan bokas bara i leverantörernas testsystem.
+        </p>
+      )}
       {o.testFlights && <div className="mt-3"><TestModeNote /></div>}
       <div className="mt-6 grid gap-6 lg:grid-cols-[1fr_360px]">
         <div className="space-y-6">
@@ -105,7 +111,7 @@ async function Checkout({ params }: { params: Promise<{ brand: string; ref: stri
               <span className="font-semibold">{s.room}</span> <span className="text-muted">· {s.board}</span>
             </p>
             <CheckoutTotal base={s.price} travellers={travellers} />
-            <PayPanel />
+            <PayPanel testBookings={env.testBookings} />
           </Card>
         </aside>
       </div>

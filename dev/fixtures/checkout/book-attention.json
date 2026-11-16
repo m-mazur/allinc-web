@@ -1,0 +1,2 @@
+{ "reference": "AL-TEST-4M8X", "status": "NeedsAttention", "customerMessage": null,
+  "lines": [ { "product": "Flight", "status": "Confirmed" }, { "product": "Hotel", "status": "Unknown" } ], "isTest": true }
