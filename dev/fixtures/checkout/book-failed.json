@@ -1,2 +1,17 @@
-{ "reference": "AL-TEST-9F2D", "status": "Failed", "customerMessage": "SoldOut",
-  "lines": [ { "product": "Flight", "status": "Failed" }, { "product": "Hotel", "status": "Undone" } ], "isTest": true }
+{
+ "reference": "AL-TEST-9F2D",
+ "status": "Failed",
+ "customerMessage": "(staff text in English)",
+ "lines": [
+  {
+   "product": "Flight",
+   "status": "Failed"
+  },
+  {
+   "product": "Hotel",
+   "status": "Undone"
+  }
+ ],
+ "isTest": true,
+ "messageCode": "NotBookedSoldOut"
+}

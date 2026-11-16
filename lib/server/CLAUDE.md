@@ -6,7 +6,9 @@ Every file starts with `import "server-only"`. Nothing here may be imported by a
   `content`, `offer`, `transfers`, `checkout.start|get|revalidate|confirm|book`). `book` (test
   bookings only) sends the travellers once, Idempotency-Key = sha256(checkout id + "book"), 150 s
   timeout, never retried; replay answers `dev/fixtures/checkout/book-<ALLINC_REPLAY_BOOKING>.json`
-  (confirmed | failed | attention). Checkout calls send
+  (confirmed | failed | attention). The API answers 200 for every outcome; Swedish copy comes from its
+  `messageCode` (`BOOKING_SV` in checkout.ts), never from `customerMessage` (English staff text).
+  Errors: 409 NotBookable, 400 InvalidTravellers, 403 BookingDisabled, 404. Checkout calls send
   `Idempotency-Key` and `X-Allinc-Web-Key` (`ALLINC_WEB_KEY`, = the API's `Checkout:WebKey`). `Raw*` types are API shapes and never leave this folder.
   Modes via `ALLINC_API_MODE`: `live`, `record` (saves to `dev/fixtures`), `replay` (offline;
   offer/transfers fall back to any recorded hotel; filters and swaps are not re-applied; checkout

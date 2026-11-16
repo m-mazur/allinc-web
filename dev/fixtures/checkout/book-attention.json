@@ -1,2 +1,17 @@
-{ "reference": "AL-TEST-4M8X", "status": "NeedsAttention", "customerMessage": null,
-  "lines": [ { "product": "Flight", "status": "Confirmed" }, { "product": "Hotel", "status": "Unknown" } ], "isTest": true }
+{
+ "reference": "AL-TEST-4M8X",
+ "status": "NeedsAttention",
+ "customerMessage": "(staff text in English)",
+ "lines": [
+  {
+   "product": "Flight",
+   "status": "Confirmed"
+  },
+  {
+   "product": "Hotel",
+   "status": "Unknown"
+  }
+ ],
+ "isTest": true,
+ "messageCode": "BeingConfirmed"
+}

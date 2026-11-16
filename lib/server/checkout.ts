@@ -245,33 +245,48 @@ function bookingBody(input: BookingInput, adults: number, passportRequired: bool
 
 /** Book a checkout whose price check is Ok. Only called after validateBooking passed. */
 export async function bookCheckout(ref: CheckoutRef, input: BookingInput): Promise<BookingResult> {
+  // The API books once per checkout id (a retry returns the same booking); the key is sent anyway.
   const key = createHash("sha256").update(`${ref.id}|book`).digest("base64url");
+  const fail = (title: string, message: string): BookingResult => ({ status: "failed", title, message, reference: null, lines: [], isTest: true });
   try {
-    const raw = await api.checkout.book(ref.id, bookingBody(input, ref.trip.q.adults, ref.pp), key);
-    return mapBooking(raw);
+    return mapBooking(await api.checkout.book(ref.id, bookingBody(input, ref.trip.q.adults, ref.pp), key));
   } catch (e) {
-    if (e instanceof ApiError && (e.kind === "TotalMismatch" || e.kind === "NotFound"))
-      return { status: "failed", title: "Priset behöver kontrolleras igen", message: "Kontrollera priset igen och boka sedan. Inget är bokat.", reference: null, lines: [], isTest: true };
-    return { status: "failed", title: "Bokningen gick inte att starta", message: "Försök igen om en liten stund. Inget är bokat och inget har dragits.", reference: null, lines: [], isTest: true };
+    const kind = e instanceof ApiError ? e.kind : "Unavailable";
+    if (kind === "NotBookable" || kind === "NotFound") return fail("Priset behöver kontrolleras igen", "Kontrollera priset igen och boka sedan. Inget är bokat.");
+    if (kind === "InvalidTravellers") return fail("Resenärsuppgifterna godtogs inte", "Kontrollera namn, födelsedatum och kontaktuppgifter. Inget är bokat.");
+    if (kind === "BookingDisabled") return fail("Testbokning är avstängd", "Bokning från webben är inte påslagen just nu. Inget är bokat.");
+    return fail("Bokningen gick inte att starta", "Försök igen om en liten stund. Inget är bokat och inget har dragits.");
   }
 }
 
+const LINE_SV_ALL: Record<string, string> = { ...LINE_SV, Pending: "Pågår", Cancelled: "Avbokat" };
+
+// Swedish copy per API messageCode (the API's customerMessage is English staff text and never shown).
+const BOOKING_SV: Record<RawBooking["messageCode"], { status: BookingResult["status"]; title: string; message: string }> = {
+  Confirmed: { status: "confirmed", title: "Bokningen är klar", message: "Flyg, hotell och eventuell transfer är bokade." },
+  ConfirmedWithoutTransfer: {
+    status: "attention",
+    title: "Bokningen är klar, utan transfer",
+    message: "Flyg och hotell är bokade, men transfern gick inte att boka. Du betalar inte för den. Vi hör av oss om en annan transfer.",
+  },
+  ConfirmedTicketsFollow: { status: "confirmed", title: "Bokningen är klar", message: "Flyg och hotell är bokade. Biljetterna utfärdas och skickas separat." },
+  BeingConfirmed: { status: "attention", title: "Bokningen bekräftas", message: "En del av resan kunde inte bekräftas direkt. Vi kontrollerar den och hör av oss." },
+  InProgress: { status: "pending", title: "Bokningen pågår", message: "Vi bekräftar med flygbolag och hotell. Det kan ta en liten stund." },
+  NotBookedSoldOut: { status: "failed", title: "Bokningen gick inte igenom", message: "Något i resan tog slut medan vi bokade. Inget är bokat och inget har dragits." },
+  NotBookedPriceChanged: { status: "failed", title: "Bokningen gick inte igenom", message: "Priset ändrades medan vi bokade. Inget är bokat och inget har dragits." },
+  NotBooked: { status: "failed", title: "Bokningen gick inte igenom", message: "Inget är bokat och inget har dragits." },
+  Cancelled: { status: "failed", title: "Bokningen är avbokad", message: "Den här bokningen är avbokad." },
+};
+
 function mapBooking(raw: RawBooking): BookingResult {
-  const lines = raw.lines.map((l) => ({ label: PRODUCT_SV[l.product] ?? l.product, status: LINE_SV[l.status] ?? l.status }));
-  const base = { reference: raw.reference, lines, isTest: raw.isTest };
-  switch (raw.status) {
-    case "Confirmed":
-      return { ...base, status: "confirmed", title: raw.isTest ? "Testbokningen är klar" : "Bokningen är klar", message: raw.isTest ? "Bokat i leverantörernas testsystem. Ingen betalning har gjorts." : "Bekräftelsen kommer på e-post." };
-    case "NeedsAttention":
-      return { ...base, status: "attention", title: "Bokningen behöver kontrolleras", message: "En del av resan kunde inte bekräftas direkt. Vi kontrollerar den och hör av oss." };
-    case "Pending":
-      return { ...base, status: "pending", title: "Bokningen pågår", message: "Vi bekräftar med flygbolag och hotell. Det kan ta en liten stund." };
-    default: {
-      const why =
-        raw.customerMessage === "SoldOut" ? "Något i resan tog slut medan vi bokade."
-        : raw.customerMessage === "PriceChanged" ? "Priset ändrades medan vi bokade."
-        : "Bokningen gick inte igenom.";
-      return { ...base, status: "failed", title: "Bokningen gick inte igenom", message: `${why} Inget är bokat och inget har dragits.` };
-    }
-  }
+  const copy = BOOKING_SV[raw.messageCode] ?? BOOKING_SV.NotBooked;
+  const testNote = raw.isTest && copy.status !== "failed" ? " Testbokning i leverantörernas testsystem: ingen betalning har gjorts." : "";
+  return {
+    status: copy.status,
+    title: copy.title,
+    message: copy.message + testNote,
+    reference: raw.reference,
+    lines: raw.lines.map((l) => ({ label: PRODUCT_SV[l.product] ?? l.product, status: LINE_SV_ALL[l.status] ?? l.status })),
+    isTest: raw.isTest,
+  };
 }

@@ -184,9 +184,13 @@ export type CheckoutChoice = { q: SearchQuery; f: SearchFilters; market: string;
 /** A test booking made from a checked checkout (POST /checkout/{id}/book). Public shape: no supplier data. */
 export type RawBooking = {
   reference: string;
-  status: "Confirmed" | "Failed" | "NeedsAttention" | "Pending";
-  customerMessage: string | null;
-  lines: { product: "Flight" | "Hotel" | "Transfer"; status: string }[];
+  status: "Confirmed" | "Failed" | "NeedsAttention" | "Pending" | "Cancelled";
+  /** What to tell the customer; the web writes its own Swedish copy from it. */
+  messageCode:
+    | "Confirmed" | "ConfirmedWithoutTransfer" | "ConfirmedTicketsFollow" | "BeingConfirmed" | "InProgress"
+    | "NotBookedSoldOut" | "NotBookedPriceChanged" | "NotBooked" | "Cancelled";
+  customerMessage: string | null; // English, for staff: never shown
+  lines: { product: "Flight" | "Hotel" | "Transfer"; status: string }[]; // Confirmed | Failed | Undone | Unknown | Pending | Cancelled
   isTest: boolean;
 };
 export type BookingBody = {
@@ -198,7 +202,9 @@ export type BookingBody = {
 export class ApiError extends Error {
   constructor(
     public status: number,
-    public kind: "NotFound" | "SourcesFailed" | "BadRequest" | "Unavailable" | "TooManyChecks" | "TotalMismatch" | "Unauthorized",
+    public kind:
+      | "NotFound" | "SourcesFailed" | "BadRequest" | "Unavailable" | "TooManyChecks" | "TotalMismatch" | "Unauthorized"
+      | "NotBookable" | "InvalidTravellers" | "BookingDisabled",
   ) {
     super(`allinc-api ${status} ${kind}`);
   }
@@ -466,8 +472,16 @@ async function postBooking(id: string, body: BookingBody, idempotencyKey: string
   } catch {
     throw new ApiError(503, "Unavailable");
   }
+  // 200 for every booking outcome (also Failed / NeedsAttention). Errors: 409 NotBookable (the checkout
+  // is not Ok), 400 InvalidTravellers, 403 BookingDisabled (Bookings:AllowWebBookings off), 404 NotFound.
   if (res.ok) return (await res.json()) as RawBooking;
-  const kind = res.status === 404 ? "NotFound" : res.status === 409 ? "TotalMismatch" : res.status === 400 ? "BadRequest" : res.status === 401 ? "Unauthorized" : "Unavailable";
+  const err = ((await res.json().catch(() => null)) as { error?: string } | null)?.error;
+  const kind =
+    err === "NotBookable" || err === "InvalidTravellers" || err === "BookingDisabled" ? err
+    : res.status === 404 ? "NotFound"
+    : res.status === 401 ? "Unauthorized"
+    : res.status === 400 ? "BadRequest"
+    : "Unavailable";
   throw new ApiError(res.status, kind);
 }
 
