@@ -4,13 +4,15 @@
 //
 // Sources (read 2026-11-14), summarised in docs/BOOKING-DATA.md:
 // - Duffel POST /air/orders, per passenger: title, gender m|f, given_name, family_name, born_on,
-//   email, phone_number (E.164); identity_documents (passport: number, issuing country, expiry)
+//   email, phone_number (E.164, validated with libphonenumber: "+460…" is rejected); identity_documents (passport: number, issuing country, expiry)
 //   only when the offer has passenger_identity_documents_required. Names: letters from Latin
 //   (ASCII, Latin-1, Latin Extended-A) plus space, - and '; given + family at most 40 characters.
 // - Hotelbeds POST /hotel-api/1.0/bookings: holder name + surname (1-50), per pax type AD|CH,
 //   age (children; must equal the search), name, surname; remark to the hotel (<= 2000).
 // - Hotelbeds Transfers POST /transfer-api/1.0/bookings: holder name, surname, email, phone (E.164);
 //   flight number per direction (taken from the booked flight, not asked).
+
+import { isValidPhoneNumber, parsePhoneNumberFromString, type CountryCode } from "libphonenumber-js/min";
 
 export type Gender = "m" | "f";
 
@@ -32,7 +34,8 @@ export type BookingInput = {
 };
 
 /** Who travels, from the search: the ages the prices were fetched for. */
-export type Party = { adults: number; childAges: number[]; depart: string; returnDate: string; passportRequired: boolean };
+/** country: the brand's market, used to read a mobile number typed without a country code. */
+export type Party = { adults: number; childAges: number[]; depart: string; returnDate: string; passportRequired: boolean; country?: string };
 
 export type Errors = Record<string, string>; // field path -> Swedish message
 
@@ -40,7 +43,6 @@ export type Errors = Record<string, string>; // field path -> Swedish message
 const NAME_RE = /^[A-Za-zÀ-ÖØ-öø-ſ' -]+$/;
 const DUFFEL_REJECTS = /[ÆæĲĳŒœÞð]/;
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
-const E164_RE = /^\+[1-9]\d{6,14}$/;
 const PASSPORT_RE = /^[A-Z0-9]{5,20}$/;
 const COUNTRY_RE = /^[A-Z]{2}$/;
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -52,12 +54,14 @@ export function ageOn(bornOn: string, day: string): number {
   return y - by - (m < bm || (m === bm && d < bd) ? 1 : 0);
 }
 
-/** "070-123 45 67" or "0046 70..." -> "+46701234567". Swedish numbers without a country code get +46. */
-export function normalisePhone(raw: string): string {
-  let p = raw.replace(/[\s().-]/g, "");
-  if (p.startsWith("00")) p = "+" + p.slice(2);
-  else if (p.startsWith("0")) p = "+46" + p.slice(1);
-  return p;
+/**
+ * Mobile number as typed -> E.164, with libphonenumber (the same library family the airline's API
+ * validates with). "070-123 45 67", "+46 070 123 45 67" and "0046 70…" all become "+46701234567";
+ * a number without a country code is read in the market's country. Invalid -> "".
+ */
+export function normalisePhone(raw: string, country = "SE"): string {
+  const n = parsePhoneNumberFromString(raw ?? "", country as CountryCode);
+  return n?.isValid() ? n.number : "";
 }
 
 export const tidyName = (s: string) => s.trim().replace(/\s+/g, " ");
@@ -111,7 +115,7 @@ export function validateBooking(input: BookingInput, party: Party): Errors {
   });
 
   if (!EMAIL_RE.test((input.email ?? "").trim()) || input.email.length > 254) e.email = "Ange en giltig e-postadress.";
-  if (!E164_RE.test(normalisePhone(input.phone ?? ""))) e.phone = "Ange mobilnummer, gärna med landsnummer (+46…).";
+  if (!isValidPhoneNumber(input.phone ?? "", (party.country ?? "SE") as CountryCode)) e.phone = "Ange ett giltigt mobilnummer, till exempel 070-123 45 67 eller +47 412 34 567.";
   if ((input.remark ?? "").length > 500) e.remark = "Högst 500 tecken.";
   return e;
 }

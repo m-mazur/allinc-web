@@ -91,6 +91,7 @@ async function Checkout({ params }: { params: Promise<{ brand: string; ref: stri
             depart={ref.q.depart}
             returnDate={addDays(ref.q.depart, ref.q.nights)}
             passportRequired={s.passportRequired}
+            country={brand.market}
           />
         </div>
         <aside className="lg:sticky lg:top-20 lg:self-start">

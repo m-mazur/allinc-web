@@ -225,10 +225,10 @@ export type BookingResult = {
 const LINE_SV: Record<string, string> = { Confirmed: "Bokat", Failed: "Gick inte", Undone: "Avbokat igen", Unknown: "Kontrolleras" };
 
 /** Traveller details as the API takes them. Names tidied, phone in E.164. Nothing here is logged. */
-function bookingBody(input: BookingInput, adults: number, passportRequired: boolean): BookingBody {
+function bookingBody(input: BookingInput, adults: number, passportRequired: boolean, country: string): BookingBody {
   const lead = input.travellers[0];
   return {
-    lead: { firstName: tidyName(lead.givenName), lastName: tidyName(lead.familyName), email: input.email.trim(), phone: normalisePhone(input.phone), language: "sv" },
+    lead: { firstName: tidyName(lead.givenName), lastName: tidyName(lead.familyName), email: input.email.trim(), phone: normalisePhone(input.phone, country), language: "sv" },
     travellers: input.travellers.map((t, i) => ({
       firstName: tidyName(t.givenName),
       lastName: tidyName(t.familyName),
@@ -249,7 +249,7 @@ export async function bookCheckout(ref: CheckoutRef, input: BookingInput): Promi
   const key = createHash("sha256").update(`${ref.id}|book`).digest("base64url");
   const fail = (title: string, message: string): BookingResult => ({ status: "failed", title, message, reference: null, lines: [], isTest: true });
   try {
-    return mapBooking(await api.checkout.book(ref.id, bookingBody(input, ref.trip.q.adults, ref.pp), key));
+    return mapBooking(await api.checkout.book(ref.id, bookingBody(input, ref.trip.q.adults, ref.pp, ref.m), key));
   } catch (e) {
     const kind = e instanceof ApiError ? e.kind : "Unavailable";
     if (kind === "NotBookable" || kind === "NotFound") return fail("Priset behöver kontrolleras igen", "Kontrollera priset igen och boka sedan. Inget är bokat.");

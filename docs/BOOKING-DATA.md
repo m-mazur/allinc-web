@@ -13,7 +13,7 @@ this data with the booking call and the backend maps it per supplier as below.
 | Given name, family name | traveller | 2-50 each, Latin letters (ASCII, Latin-1, Latin Extended-A, not Æ æ Ĳ ĳ Œ œ Þ ð), space, `-`, `'`; together at most 40 | Duffel `given_name`/`family_name`; Hotelbeds pax `name`/`surname` (1-50); holder = traveller 1 |
 | Date of birth | traveller | adults 18+ at departure; a child's age at the return date must equal the searched age | Duffel `born_on`; Hotelbeds child `age` (must equal the availability ages) |
 | Email | booking | valid address | Duffel `email` (every passenger gets the lead's); Transfers `holder.email` |
-| Mobile | booking | E.164 after normalising (`070…` becomes `+4670…`) | Duffel `phone_number`; Transfers `holder.phone` |
+| Mobile | booking | valid per libphonenumber (`libphonenumber-js`), read in the market's country when typed without a country code; sent as E.164 (`070…` and `+46 070…` both become `+4670…`) | Duffel `phone_number`; Transfers `holder.phone` |
 | Passport number, issuing country, expiry | traveller, **only when the flight offer has `passenger_identity_documents_required`** | number 5-20 A-Z/0-9, ISO 3166 alpha-2, valid after the return date | Duffel `identity_documents[{type: passport, unique_identifier, issuing_country_code, expires_on}]` |
 | Wishes to the hotel | booking, optional | at most 500 (Hotelbeds allows 2000) | Hotelbeds `remark` |
 

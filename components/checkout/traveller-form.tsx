@@ -8,14 +8,14 @@ import { useCheckout } from "./checkout-state";
 // Not a <form>: a plain submit would put personal data in the URL. Values live in client state
 // only and are sent with "Till betalning". Errors show after leaving a field or after pay.
 
-type Props = { adults: number; childAges: number[]; depart: string; returnDate: string; passportRequired: boolean };
+type Props = { adults: number; childAges: number[]; depart: string; returnDate: string; passportRequired: boolean; country: string };
 
 const input =
   "mt-1 h-11 w-full rounded-control border bg-surface px-3 text-base text-ink focus:border-primary focus:outline-2 focus:outline-primary/30";
 
-export function TravellerForm({ adults, childAges, depart, returnDate, passportRequired }: Props) {
+export function TravellerForm({ adults, childAges, depart, returnDate, passportRequired, country }: Props) {
   const { booking, setBooking, errors, setErrors } = useCheckout();
-  const party = { adults, childAges, depart, returnDate, passportRequired };
+  const party = { adults, childAges, depart, returnDate, passportRequired, country };
 
   const setT = (i: number, patch: Partial<TravellerInput>) =>
     setBooking({ ...booking, travellers: booking.travellers.map((t, j) => (j === i ? { ...t, ...patch } : t)) });

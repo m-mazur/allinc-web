@@ -40,6 +40,7 @@ export async function payAction(checkoutRef: string, transferToken: string | nul
     depart: q.depart,
     returnDate: addDays(q.depart, q.nights),
     passportRequired: ref.pp,
+    country: ref.m,
   });
   if (Object.keys(errors).length) return { view: null, ref: null, errors };
 

@@ -8,7 +8,8 @@
   `SessionInit` (hands the server's first check to the client), `CheckoutTotal` + `PayPanel`
   (status box and buttons calling the server actions), transfer picker, `TravellerForm` (traveller
   details the suppliers need; rules in `lib/travellers.ts`, sources in `docs/BOOKING-DATA.md`;
-  personal data stays in memory, never storage or URLs). `sold-out-note.tsx`: the
+  personal data stays in memory, never storage or URLs; phone numbers are checked with
+  `libphonenumber-js`, default country = the brand's market). `sold-out-note.tsx`: the
   banner on offer/results after a sold-out redirect.
 
 ## Rules
