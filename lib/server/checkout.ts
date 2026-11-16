@@ -1,8 +1,8 @@
 import "server-only";
 import { createHash } from "node:crypto";
 import { headers } from "next/headers";
-import { api, ApiError, type BookingBody, type RawBooking, type RawCheckout, type SearchFilters, type SearchQuery } from "./api";
-import { normalisePhone, tidyName, type BookingInput } from "../travellers";
+import { api, ApiError, type BookingBody, type ExtraChoice, type RawBooking, type RawCheckout, type RawExtras, type SearchFilters, type SearchQuery } from "./api";
+import { normalisePhone, tidyName, travellerLabel, type BookingInput } from "../travellers";
 import { seal, sealStable, unseal, unsealStable } from "./seal";
 import { toParams } from "./search-params";
 import { tripRef } from "./view";
@@ -17,12 +17,27 @@ import type { Price } from "../format";
 type Trip = { q: SearchQuery; f: SearchFilters; h: string; fl?: string; r?: string };
 /** What the browser carries through checkout: the API's checkout id, the trip, the transfer in it, the total last shown. */
 /** pp: the flight needs passport details (decides which traveller fields are required). */
-type CheckoutRef = { id: string; trip: Trip; m: string; pp: boolean; tr: string | null; shown: number; t: number };
-const CHECKOUT = "checkout.v1";
+/** ex: the extra bags and seats the API session holds (its Extras line), as the API's own opaque ids. */
+type CheckoutRef = { id: string; trip: Trip; m: string; pp: boolean; tr: string | null; ex: ExtraChoice[]; shown: number; t: number };
+const CHECKOUT = "checkout.v2";
 const MAX_AGE_MS = 2 * 3600_000;
 
-export function sealCheckout(id: string, trip: Trip, market: string, passportRequired: boolean, transfer: string | null, shownTotal: number): string {
-  return seal(CHECKOUT, { id, trip, m: market, pp: passportRequired, tr: transfer, shown: shownTotal, t: Date.now() } satisfies CheckoutRef);
+export function sealCheckout(id: string, trip: Trip, market: string, passportRequired: boolean, transfer: string | null, shownTotal: number, extras: ExtraChoice[] = []): string {
+  return seal(CHECKOUT, { id, trip, m: market, pp: passportRequired, tr: transfer, ex: extras, shown: shownTotal, t: Date.now() } satisfies CheckoutRef);
+}
+
+import { extrasKey } from "../extras";
+export { extrasKey };
+
+/** What the browser may send as extras: our API's ids (short, opaque), whole quantities 1-9, at most 40. */
+export function cleanExtras(input: unknown): ExtraChoice[] | null {
+  if (!Array.isArray(input) || input.length > 40) return null;
+  const out: ExtraChoice[] = [];
+  for (const c of input) {
+    if (!c || typeof c.id !== "string" || !/^x[A-Za-z0-9_-]{1,39}$/.test(c.id) || !Number.isInteger(c.quantity) || c.quantity < 1 || c.quantity > 9) return null;
+    out.push({ id: c.id, quantity: c.quantity });
+  }
+  return out;
 }
 
 export function openCheckout(token: string): CheckoutRef | null {
@@ -64,7 +79,8 @@ async function allowNewCheck(): Promise<boolean> {
 const idempotencyKey = (trip: Trip, transfer: string | null, attempt: string) =>
   createHash("sha256").update(JSON.stringify([trip.q, trip.f, trip.h, trip.fl ?? null, trip.r ?? null, transfer, attempt])).digest("base64url");
 
-export type CheckoutOutcome = { view: CheckoutView | null; ref: string | null; errors?: Record<string, string>; booking?: BookingResult };
+/** extrasKey: which bags and seats the returned ref's session holds (see lib/extras.ts). */
+export type CheckoutOutcome = { view: CheckoutView | null; ref: string | null; extrasKey?: string; errors?: Record<string, string>; booking?: BookingResult };
 
 /**
  * Start (or rejoin) a checkout for this trip and transfer. The same trip + transfer in the same hour
@@ -77,7 +93,7 @@ export async function startCheckout(trip: Trip, market: string, passportRequired
   if (!(await allowNewCheck())) return { view: problem("busy"), ref: null };
   try {
     const raw = await api.checkout.start({ q: trip.q, f: trip.f, market, hotel: trip.h, flight: trip.fl, room: trip.r, transfer }, idempotencyKey(trip, transfer, attempt));
-    return outcome(raw, trip, market, passportRequired, transfer);
+    return outcome(raw, trip, market, passportRequired, transfer, []);
   } catch (e) {
     // A 404 here means no checkout route (an older API), not an expired session.
     return { view: problem(e instanceof ApiError && e.kind === "NotFound" ? "cannot" : e), ref: null };
@@ -86,7 +102,7 @@ export async function startCheckout(trip: Trip, market: string, passportRequired
 
 export async function revalidateCheckout(ref: CheckoutRef): Promise<CheckoutOutcome> {
   try {
-    return outcome(await api.checkout.revalidate(ref.id), ref.trip, ref.m, ref.pp, ref.tr);
+    return outcome(await api.checkout.revalidate(ref.id), ref.trip, ref.m, ref.pp, ref.tr, ref.ex);
   } catch (e) {
     if (e instanceof ApiError && e.kind === "NotFound") return { view: problem("expired"), ref: null };
     return { view: problem(e), ref: null };
@@ -96,12 +112,12 @@ export async function revalidateCheckout(ref: CheckoutRef): Promise<CheckoutOutc
 /** Accept a changed total: the total sent is the one we sealed when we showed it, never a browser value. */
 export async function confirmCheckout(ref: CheckoutRef): Promise<CheckoutOutcome> {
   try {
-    return outcome(await api.checkout.confirm(ref.id, ref.shown), ref.trip, ref.m, ref.pp, ref.tr);
+    return outcome(await api.checkout.confirm(ref.id, ref.shown), ref.trip, ref.m, ref.pp, ref.tr, ref.ex);
   } catch (e) {
     if (e instanceof ApiError && e.kind === "TotalMismatch") {
       // The price moved again since it was shown: show the session as it is now.
       try {
-        return outcome(await api.checkout.get(ref.id), ref.trip, ref.m, ref.pp, ref.tr);
+        return outcome(await api.checkout.get(ref.id), ref.trip, ref.m, ref.pp, ref.tr, ref.ex);
       } catch (e2) {
         return { view: problem(e2), ref: null };
       }
@@ -110,8 +126,91 @@ export async function confirmCheckout(ref: CheckoutRef): Promise<CheckoutOutcome
   }
 }
 
-function outcome(raw: RawCheckout, trip: Trip, market: string, passportRequired: boolean, transfer: string | null): CheckoutOutcome {
-  return { view: mapCheckout(raw, trip), ref: sealCheckout(raw.checkoutId, trip, market, passportRequired, transfer, raw.total.amount) };
+function outcome(raw: RawCheckout, trip: Trip, market: string, passportRequired: boolean, transfer: string | null, extras: ExtraChoice[]): CheckoutOutcome {
+  return { view: mapCheckout(raw, trip), ref: sealCheckout(raw.checkoutId, trip, market, passportRequired, transfer, raw.total.amount, extras), extrasKey: extrasKey(extras) };
+}
+
+/**
+ * Sets the session's extra bags and seats; the API prices them live with the airline. Reads the extras first,
+ * so a session that has never shown them (a new check after a transfer change) knows the ids.
+ */
+export async function applyExtras(ref: CheckoutRef, choice: ExtraChoice[]): Promise<CheckoutOutcome> {
+  try {
+    await api.checkout.extras(ref.id);
+    return outcome(await api.checkout.setExtras(ref.id, choice), ref.trip, ref.m, ref.pp, ref.tr, choice);
+  } catch (e) {
+    const kind = e instanceof ApiError ? e.kind : "Unavailable";
+    if (kind === "ExtrasUnavailable" || kind === "BadExtras") {
+      // Something chosen is no longer sold (or no longer fits): the session is as it was; ask the customer to choose again.
+      try {
+        const now = outcome(await api.checkout.get(ref.id), ref.trip, ref.m, ref.pp, ref.tr, ref.ex);
+        // extrasKey = the attempted choice, so the page shows this answer for it (not "you changed your choice").
+        return { ...now, extrasKey: extrasKey(choice), view: { ...now.view!, status: "soldout", title: "Ett tillval finns inte längre", message: SOLD_OUT_SV.extras, soldOutWhat: "extras", soldOutHref: null, canPay: false } };
+      } catch (e2) {
+        return { view: problem(e2), ref: null };
+      }
+    }
+    if (kind === "NotPossible" || kind === "NotFound") return { view: problem("expired"), ref: null };
+    return { view: problem(kind === "TooManyChecks" ? "busy" : e), ref: null };
+  }
+}
+
+// ---------- extras: public view ----------
+
+export type ExtrasSeat = { designator: string; note: boolean; prices: { id: string; traveller: number; price: Price }[] };
+export type ExtrasCell = { kind: "seat"; seat: ExtrasSeat } | { kind: "space" } | { kind: "exit" } | { kind: "facility" };
+export type ExtrasModel = {
+  available: boolean;
+  currency: string;
+  travellers: { index: number; label: string; seat: boolean }[];
+  bags: { id: string; traveller: number; title: string; journey: string; max: number; price: Price }[];
+  flights: { key: string; label: string; route: string; rows: { label: string; exit: boolean; sections: ExtrasCell[][] }[] }[];
+};
+
+const JOURNEY_SV = ["Utresa", "Hemresa"];
+
+/** Hand-picked fields only. Ids are the API's opaque ids (hashes, no supplier data) and are safe to hand to the browser. */
+export function mapExtras(raw: RawExtras, party: { adults: number; childAges: number[] }): ExtrasModel {
+  const travellers = raw.passengers.map((p) => ({ index: p.index, label: travellerLabel(p.index, party), seat: p.seat }));
+  const route = (i: number) => {
+    const j = raw.journeys[i];
+    return j ? `${j.origin}–${j.destination}` : "";
+  };
+  const bags = raw.bags.map((b) => ({
+    id: b.id,
+    traveller: b.passenger,
+    title: `${b.kind === "carry_on" ? "Extra handbagage" : "Incheckad väska"}${b.maxWeightKg ? ` ${b.maxWeightKg} kg` : ""}`,
+    journey: b.journeys.length > 1 ? "Tur och retur" : `${JOURNEY_SV[b.journeys[0]] ?? "Resa"} ${route(b.journeys[0])}`,
+    max: b.maxQuantity,
+    price: { amount: b.price.amount, currency: b.price.currency },
+  }));
+  const flights = raw.seatMaps
+    .filter((m) => m.cabins.some((c) => c.rows.some((r) => r.some((sec) => sec.some((e) => e.prices.length > 0)))))
+    .map((m) => ({
+      key: `${m.flightNumber}@${m.departsLocal}`,
+      label: `${JOURNEY_SV[m.journey] ?? "Flyg"} · ${m.flightNumber}`,
+      route: `${m.origin}–${m.destination}`,
+      rows: m.cabins.flatMap((c) =>
+        c.rows.map((r) => {
+          const seats = r.flat().filter((e) => e.type === "seat" && e.designator);
+          const exit = r.flat().some((e) => e.type === "exit_row");
+          return {
+            label: seats[0]?.designator?.replace(/[A-Z]+$/, "") ?? "",
+            exit: exit && seats.length === 0,
+            sections: r.map((sec) =>
+              sec.map((e): ExtrasCell =>
+                e.type === "seat" && e.designator
+                  ? { kind: "seat", seat: { designator: e.designator, note: e.disclosures.length > 0, prices: e.prices.map((p) => ({ id: p.id, traveller: p.passenger, price: { amount: p.price.amount, currency: p.price.currency } })) } }
+                  : e.type === "exit_row" ? { kind: "exit" }
+                  : e.type === "empty" ? { kind: "space" }
+                  : { kind: "facility" },
+              ),
+            ),
+          };
+        }),
+      ),
+    }));
+  return { available: raw.available && (bags.length > 0 || flights.length > 0), currency: raw.currency, travellers, bags, flights };
 }
 
 // ---------- public view ----------
@@ -127,12 +226,14 @@ export type CheckoutView = {
   /** Seconds the price is held from now, worked out on the server (so a wrong client clock can't skew it). */
   secondsLeft: number | null;
   lines: CheckoutLine[];
-  /** Where to go when something is sold out; null = stay (transfer). */
+  /** Where to go when something is sold out; null = stay (transfer, extras). */
   soldOutHref: string | null;
+  /** What is sold out: flight, room, hotel, transfer or extras. */
+  soldOutWhat: string | null;
   canPay: boolean;
 };
 
-const PRODUCT_SV = { Flight: "Flyg", Hotel: "Hotell", Transfer: "Transfer" } as const;
+const PRODUCT_SV = { Flight: "Flyg", Hotel: "Hotell", Transfer: "Transfer", Extras: "Bagage och platser" } as const;
 const CHANGE_SV: Record<string, string> = {
   Price: "Priset",
   FlightSchedule: "Flygtiderna",
@@ -150,6 +251,7 @@ const SOLD_OUT_SV: Record<string, string> = {
   room: "Rummet är slutsålt. Välj ett annat rum på samma hotell.",
   hotel: "Hotellet är slutsålt för dina datum. Här är andra hotell för samma resa.",
   transfer: "Transfern är slutsåld. Välj en annan transfer eller fortsätt utan.",
+  extras: "En vald väska eller sittplats finns inte längre hos flygbolaget. Välj igen eller fortsätt utan.",
 };
 
 export function mapCheckout(raw: RawCheckout, trip: Trip): CheckoutView {
@@ -161,14 +263,14 @@ export function mapCheckout(raw: RawCheckout, trip: Trip): CheckoutView {
     changes: l.changes.map((c) => CHANGE_SV[c] ?? "Villkoren"),
   }));
   const secondsLeft = Math.max(0, Math.round((Date.parse(raw.expiresAt) - Date.now()) / 1000));
-  const base = { total: { amount: raw.total.amount, currency: raw.total.currency }, previousTotal: null, expiresAt: raw.expiresAt, secondsLeft, lines, soldOutHref: null };
+  const base = { total: { amount: raw.total.amount, currency: raw.total.currency }, previousTotal: null, expiresAt: raw.expiresAt, secondsLeft, lines, soldOutHref: null, soldOutWhat: null };
   switch (raw.status) {
     case "Ok":
       return {
         ...base,
         status: "ok",
         title: "Priset är bekräftat",
-        message: raw.lines.some((l) => l.product === "Transfer") ? "Vi har kontrollerat flyg, hotell och transfer just nu." : "Vi har kontrollerat flyg och hotell just nu.",
+        message: `Vi har kontrollerat ${checkedParts(raw)} just nu.`,
         canPay: true,
       };
     case "Changed":
@@ -182,13 +284,21 @@ export function mapCheckout(raw: RawCheckout, trip: Trip): CheckoutView {
       };
     case "SoldOut": {
       const what = raw.soldOut?.what ?? "hotel";
-      return { ...base, status: "soldout", title: "Slutsålt", message: SOLD_OUT_SV[what] ?? SOLD_OUT_SV.hotel, soldOutHref: soldOutHref(raw, trip), canPay: false };
+      return { ...base, status: "soldout", title: "Slutsålt", message: SOLD_OUT_SV[what] ?? SOLD_OUT_SV.hotel, soldOutHref: soldOutHref(raw, trip), soldOutWhat: what, canPay: false };
     }
     case "Expired":
       return { ...problem("expired"), lines };
     default:
       return { ...problem("cannot"), lines };
   }
+}
+
+/** "flyg och hotell", "flyg, hotell och transfer", "flyg, hotell, transfer och dina tillval". */
+function checkedParts(raw: RawCheckout): string {
+  const parts = ["flyg", "hotell"];
+  if (raw.lines.some((l) => l.product === "Transfer")) parts.push("transfer");
+  if (raw.lines.some((l) => l.product === "Extras")) parts.push("dina tillval");
+  return parts.length > 2 ? `${parts.slice(0, -1).join(", ")} och ${parts.at(-1)}` : parts.join(" och ");
 }
 
 function soldOutHref(raw: RawCheckout, trip: Trip): string | null {
@@ -203,7 +313,7 @@ function soldOutHref(raw: RawCheckout, trip: Trip): string | null {
 const EXPIRED_MESSAGE = "Vi håller ett pris i högst 20 minuter. Kontrollera priset igen för att fortsätta.";
 
 function problem(e: unknown): CheckoutView {
-  const empty = { total: null, previousTotal: null, expiresAt: null, secondsLeft: null, lines: [], soldOutHref: null, canPay: false };
+  const empty = { total: null, previousTotal: null, expiresAt: null, secondsLeft: null, lines: [], soldOutHref: null, soldOutWhat: null, canPay: false };
   if (e === "expired" || (e instanceof ApiError && e.kind === "NotFound"))
     return { ...empty, status: "expired", title: "Tiden för priset har gått ut", message: EXPIRED_MESSAGE };
   if (e === "busy" || (e instanceof ApiError && e.kind === "TooManyChecks"))

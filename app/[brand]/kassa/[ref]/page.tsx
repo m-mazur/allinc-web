@@ -3,14 +3,15 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Suspense } from "react";
 import { connection } from "next/server";
-import { ArrowLeft, Bus } from "lucide-react";
+import { ArrowLeft, Bus, Luggage } from "lucide-react";
 import { getBrand } from "@/brands";
 import { env } from "@/lib/server/env";
 import { api, ApiError, type RawTransfers } from "@/lib/server/api";
-import { sealCheckout, startCheckout } from "@/lib/server/checkout";
+import { mapExtras, openCheckout, sealCheckout, startCheckout, type CheckoutOutcome } from "@/lib/server/checkout";
 import { mapOffer, mapTransfers, openTripRef } from "@/lib/server/view";
 import { CheckoutState } from "@/components/checkout/checkout-state";
 import { CheckoutTotal, PayPanel } from "@/components/checkout/checkout-summary";
+import { ExtrasPicker } from "@/components/checkout/extras-picker";
 import { SessionInit } from "@/components/checkout/session-init";
 import { TransferPicker } from "@/components/checkout/transfer-picker";
 import { TravellerForm } from "@/components/checkout/traveller-form";
@@ -22,9 +23,10 @@ import { addDays, dateLong, nightsLabel, party } from "@/lib/format";
 
 export const metadata: Metadata = { title: "Kassa", robots: { index: false } };
 
-// Checkout: the trip, the transfer suggestion, a traveller form, and the live price check.
-// Streamed in after the shell: the transfer suggestion, then POST /checkout for the package with the
-// suggested transfer (one live supplier check). "Till betalning" checks again; payment itself is not
+// Checkout: the trip, the transfer options, extra bags and seats, a traveller form, and the live price check.
+// Streamed in after the shell: POST /checkout for the package without a transfer (one live supplier check)
+// starts at once; the transfer options and, once that check has a session, the flight's extras stream in
+// beside it. "Till betalning" checks again with the chosen transfer and extras; payment itself is not
 // built yet, so nothing is paid or booked.
 
 export default function CheckoutPage({ params }: PageProps<"/[brand]/kassa/[ref]">) {
@@ -61,6 +63,10 @@ async function Checkout({ params }: { params: Promise<{ brand: string; ref: stri
   const o = mapOffer(raw, null, ref);
   const s = o.selected;
   const travellers = o.trip.adults + o.trip.children;
+  // Start without a transfer, so the checkout total is the price the customer saw on the offer page.
+  // Shared by the transfer section (hands it to the client) and the extras section (needs its session).
+  const t = { q: ref.q, f: ref.f, h: ref.h, fl: ref.fl, r: ref.r };
+  const first = startCheckout(t, brand.market, s.passportRequired, null);
 
   return (
     <CheckoutState travellers={travellers}>
@@ -82,9 +88,12 @@ async function Checkout({ params }: { params: Promise<{ brand: string; ref: stri
               <h2 className="text-lg">Transfer till hotellet</h2>
             </div>
             <Suspense fallback={<TransferLoading />}>
-              <LiveCheckout trip={ref} market={brand.market} passportRequired={s.passportRequired} />
+              <LiveCheckout trip={ref} market={brand.market} passportRequired={s.passportRequired} first={first} />
             </Suspense>
           </Card>
+          <Suspense fallback={<ExtrasLoading />}>
+            <ExtrasSection first={first} party={{ adults: ref.q.adults, childAges: ref.q.childAges }} />
+          </Suspense>
           <TravellerForm
             adults={o.trip.adults}
             childAges={ref.q.childAges}
@@ -120,17 +129,16 @@ async function Checkout({ params }: { params: Promise<{ brand: string; ref: stri
   );
 }
 
-/** Loads the transfer options, then checks the package live (flight + hotel, no transfer yet). */
-async function LiveCheckout({ trip, market, passportRequired }: { trip: NonNullable<ReturnType<typeof openTripRef>>; market: string; passportRequired: boolean }) {
+/** Loads the transfer options and hands the first live check (flight + hotel, no transfer yet) to the client. */
+async function LiveCheckout({ trip, market, passportRequired, first: firstCheck }: { trip: NonNullable<ReturnType<typeof openTripRef>>; market: string; passportRequired: boolean; first: Promise<CheckoutOutcome> }) {
   const raw: RawTransfers | ApiError = await api.transfers(trip.q, trip.f, market, trip.h, trip.fl).catch((e: ApiError) => e);
   const transfers = raw instanceof ApiError ? null : mapTransfers(raw);
 
   const t = { q: trip.q, f: trip.f, h: trip.h, fl: trip.fl, r: trip.r };
-  // Start without a transfer, so the checkout total is the price the customer saw on the offer page.
   // The transfer is an add-on they choose; picking one is checked at "Till betalning".
-  const first = await startCheckout(t, market, passportRequired, null);
+  const first = await firstCheck;
   // A failed first check still gets a ref (no checkout id), so "Kontrollera priset igen" can start one.
-  const session = { view: first.view!, ref: first.ref ?? sealCheckout("", t, market, passportRequired, null, 0), transferId: null };
+  const session = { view: first.view!, ref: first.ref ?? sealCheckout("", t, market, passportRequired, null, 0), transferId: null, extrasKey: "" };
 
   return (
     <>
@@ -147,6 +155,44 @@ async function LiveCheckout({ trip, market, passportRequired }: { trip: NonNulla
         </div>
       )}
     </>
+  );
+}
+
+/**
+ * Extra bags and paid seats for the checked flight (from the airline, customer prices). Hidden when the
+ * airline sells none, or the first check has no session; a failed fetch says so and the trip books without.
+ */
+async function ExtrasSection({ first, party }: { first: Promise<CheckoutOutcome>; party: { adults: number; childAges: number[] } }) {
+  const checked = await first;
+  const id = checked.ref && (checked.view?.status === "ok" || checked.view?.status === "changed") ? openCheckout(checked.ref)?.id : null;
+  if (!id) return null;
+  const extras = await api.checkout.extras(id).then((raw) => mapExtras(raw, party), () => "failed" as const);
+  if (extras !== "failed" && !extras.available) return null;
+  return (
+    <Card className="p-5">
+      <div className="flex items-center gap-2">
+        <Luggage className="size-5 text-primary" aria-hidden />
+        <h2 className="text-lg">Bagage och sittplatser</h2>
+      </div>
+      {extras === "failed" ? (
+        <p className="mt-3 text-sm text-muted">Vi kunde inte hämta extra bagage och sittplatser just nu. Resan går att boka utan.</p>
+      ) : (
+        <div className="mt-3">
+          <ExtrasPicker extras={extras} />
+        </div>
+      )}
+    </Card>
+  );
+}
+
+function ExtrasLoading() {
+  return (
+    <Card className="p-5" aria-busy="true">
+      <p className="text-sm text-muted" role="status">
+        Vi hämtar extra bagage och sittplatser från flygbolaget…
+      </p>
+      <div className="skeleton mt-3 h-24 rounded-card" />
+    </Card>
   );
 }
 

@@ -1,6 +1,20 @@
 "use server";
 
-import { bookCheckout, confirmCheckout, openCheckout, openTransferId, revalidateCheckout, startCheckout, type CheckoutOutcome } from "@/lib/server/checkout";
+import {
+  applyExtras,
+  bookCheckout,
+  cleanExtras,
+  confirmCheckout,
+  extrasKey,
+  mapExtras,
+  openCheckout,
+  openTransferId,
+  revalidateCheckout,
+  startCheckout,
+  type CheckoutOutcome,
+  type ExtrasModel,
+} from "@/lib/server/checkout";
+import { api, type ExtraChoice } from "@/lib/server/api";
 import { env } from "@/lib/server/env";
 import { addDays } from "@/lib/format";
 import { validateBooking, type BookingInput } from "@/lib/travellers";
@@ -21,6 +35,7 @@ const expired = (): CheckoutOutcome => ({
     secondsLeft: null,
     lines: [],
     soldOutHref: null,
+    soldOutWhat: null,
     canPay: false,
   },
   ref: null,
@@ -28,9 +43,10 @@ const expired = (): CheckoutOutcome => ({
 
 /**
  * "Till betalning": check the traveller details, then the price (again, or anew if the transfer changed).
+ * Changed bags or seats are set on the session first: the airline prices them live.
  * Invalid details return field errors and spend no supplier call.
  */
-export async function payAction(checkoutRef: string, transferToken: string | null, booking: BookingInput): Promise<CheckoutOutcome> {
+export async function payAction(checkoutRef: string, transferToken: string | null, extrasInput: ExtraChoice[], booking: BookingInput): Promise<CheckoutOutcome> {
   const ref = openCheckout(checkoutRef);
   if (!ref) return expired();
   const { q } = ref.trip;
@@ -46,9 +62,40 @@ export async function payAction(checkoutRef: string, transferToken: string | nul
 
   const transfer = openTransferId(transferToken);
   if (transferToken && !transfer) return expired();
+  const extras = cleanExtras(extrasInput);
+  if (!extras) return expired();
+
   // No session yet (the first check failed) or another transfer chosen: a new check for this choice.
-  if (!ref.id || transfer !== ref.tr) return startCheckout(ref.trip, ref.m, ref.pp, transfer);
-  return revalidateCheckout(ref);
+  let current = ref;
+  if (!ref.id || transfer !== ref.tr) {
+    const started = await startCheckout(ref.trip, ref.m, ref.pp, transfer);
+    const next = started.ref ? openCheckout(started.ref) : null;
+    if (!next?.id || !(started.view?.status === "ok" || started.view?.status === "changed") || extrasKey(extras) === "") return started;
+    current = next;
+  }
+  // Bags or seats changed: the airline prices the new choice live (the answer is the whole checkout).
+  if (extrasKey(extras) !== extrasKey(current.ex)) {
+    const set = await applyExtras(current, extras);
+    const next = set.ref ? openCheckout(set.ref) : null;
+    if (!next || set.view?.status !== "ok") return set;
+    current = next;
+  }
+  return revalidateCheckout(current);
+}
+
+/**
+ * The bags and seats the airline sells now for this checkout's flight (after a chosen one was gone).
+ * null = none, or they could not be fetched; the page then keeps what it shows.
+ */
+export async function extrasAction(checkoutRef: string): Promise<ExtrasModel | null> {
+  const ref = openCheckout(checkoutRef);
+  if (!ref?.id) return null;
+  try {
+    const raw = await api.checkout.extras(ref.id);
+    return mapExtras(raw, { adults: ref.trip.q.adults, childAges: ref.trip.q.childAges });
+  } catch {
+    return null;
+  }
 }
 
 /** The customer accepts the changed total shown to them. */
@@ -70,9 +117,9 @@ export async function recheckAction(checkoutRef: string, transferToken: string |
  * traveller details and the price exactly like payAction, and when the price is confirmed, book the
  * package on the suppliers' test systems. Failures are real (sold out, refused) and come back as such.
  */
-export async function bookAction(checkoutRef: string, transferToken: string | null, booking: BookingInput): Promise<CheckoutOutcome> {
+export async function bookAction(checkoutRef: string, transferToken: string | null, extras: ExtraChoice[], booking: BookingInput): Promise<CheckoutOutcome> {
   if (!env.testBookings) return expired();
-  const checked = await payAction(checkoutRef, transferToken, booking);
+  const checked = await payAction(checkoutRef, transferToken, extras, booking);
   if (checked.errors || !checked.view || checked.view.status !== "ok" || !checked.ref) return checked;
   const ref = openCheckout(checked.ref);
   if (!ref?.id) return expired();

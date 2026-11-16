@@ -6,21 +6,27 @@ import { AlertTriangle, CheckCircle2, Clock, Loader2 } from "lucide-react";
 import { bookAction, confirmAction, payAction, recheckAction } from "@/lib/actions/checkout";
 import { money, type Price } from "@/lib/format";
 import { cn } from "@/lib/cn";
+import { extrasKey } from "@/lib/extras";
 import { useCheckout, type BookingResultClient, type Session } from "./checkout-state";
 
 /**
- * The amount to pay. When the latest server check covers the chosen transfer, that check's total
- * is shown (the amount the API session holds). Otherwise, a preview: the package plus the chosen
- * transfer, both customer prices from the server, checked again at "Till betalning".
+ * The amount to pay. When the latest server check covers the chosen transfer and extras, that check's
+ * total is shown (the amount the API session holds). Otherwise, a preview: the package plus the chosen
+ * transfer and extras, all customer prices from the server, checked again at "Till betalning".
  */
 export function CheckoutTotal({ base, travellers }: { base: Price; travellers: number }) {
-  const { transfer, session } = useCheckout();
-  const covered = session?.view.total && session.transferId === (transfer?.id ?? null);
-  const total = covered ? session!.view.total! : { amount: base.amount + (transfer?.price.amount ?? 0), currency: base.currency };
+  const { transfer, extras, session } = useCheckout();
+  const covered = session?.view.total && session.transferId === (transfer?.id ?? null) && session.extrasKey === extrasKey(extras);
+  const extrasPreview = extras.reduce((n, e) => n + e.price.amount * e.quantity, 0);
+  const total = covered ? session!.view.total! : { amount: base.amount + (transfer?.price.amount ?? 0) + extrasPreview, currency: base.currency };
   // When the check covers this choice, every amount shown comes from it.
   const transferLine = covered ? session!.view.lines.find((l) => l.label === "Transfer") : undefined;
+  const extrasLine = covered ? session!.view.lines.find((l) => l.label === "Bagage och platser") : undefined;
   const transferPrice = covered ? (transferLine?.price ?? null) : (transfer?.price ?? null);
-  const packagePrice = covered ? { amount: total.amount - (transferLine?.price.amount ?? 0), currency: total.currency } : base;
+  const extrasPrice = covered ? (extrasLine?.price ?? null) : extras.length ? { amount: extrasPreview, currency: base.currency } : null;
+  const packagePrice = covered
+    ? { amount: total.amount - (transferLine?.price.amount ?? 0) - (extrasLine?.price.amount ?? 0), currency: total.currency }
+    : base;
   return (
     <div className="space-y-2 text-sm">
       <div className="flex justify-between">
@@ -31,6 +37,12 @@ export function CheckoutTotal({ base, travellers }: { base: Price; travellers: n
         <span className="text-muted">Transfer</span>
         <span className="tabular-nums">{transferPrice ? money(transferPrice) : "Ingen"}</span>
       </div>
+      {extrasPrice && (
+        <div className="flex justify-between">
+          <span className="text-muted">Bagage och platser</span>
+          <span className="tabular-nums">{money(extrasPrice)}</span>
+        </div>
+      )}
       <div className="flex items-baseline justify-between border-t border-line pt-3">
         <span className="font-bold">Att betala</span>
         <span className="text-3xl font-bold tabular-nums" aria-live="polite">
@@ -46,15 +58,17 @@ export function CheckoutTotal({ base, travellers }: { base: Price; travellers: n
 /** Price-check status and the actions it allows: pay, accept a new price, check again, or go elsewhere. */
 /** testBookings: "Boka testresa" books on the suppliers' test systems (no payment step). */
 export function PayPanel({ testBookings = false }: { testBookings?: boolean }) {
-  const { transfer, session, setSession, setTransfer, checking, booking, errors, setErrors } = useCheckout();
+  const { transfer, extras, setExtras, session, setSession, setTransfer, checking, booking, errors, setErrors } = useCheckout();
   const [pending, start] = useTransition();
   const [paid, setPaid] = useState(false);
   const [result, setResult] = useState<BookingResultClient | null>(null);
   const transferId = transfer?.id ?? null;
+  const picks = extras.map((e) => ({ id: e.id, quantity: e.quantity }));
+  const pickedKey = extrasKey(picks);
 
   // isPay: the customer pressed "Till betalning" or accepted a new price; an Ok answer then means
   // the price is locked and payment would start (not built yet).
-  const run = (fn: () => Promise<{ view: Session["view"] | null; ref: string | null; errors?: Record<string, string>; booking?: BookingResultClient }>, isPay: boolean) =>
+  const run = (fn: () => Promise<{ view: Session["view"] | null; ref: string | null; extrasKey?: string; errors?: Record<string, string>; booking?: BookingResultClient }>, isPay: boolean) =>
     start(async () => {
       const r = await fn();
       if (r.errors) {
@@ -67,7 +81,12 @@ export function PayPanel({ testBookings = false }: { testBookings?: boolean }) {
       setErrors({});
       if (!r.view) return;
       // Keep the last good ref when a check fails, so "Kontrollera priset igen" can continue from it.
-      setSession({ view: r.view, ref: r.ref ?? session!.ref, transferId: r.ref ? transferId : session!.transferId });
+      setSession({
+        view: r.view,
+        ref: r.ref ?? session!.ref,
+        transferId: r.ref ? transferId : session!.transferId,
+        extrasKey: r.ref ? (r.extrasKey ?? "") : session!.extrasKey,
+      });
       // Test bookings: an Ok check is followed by the booking in the same action; its result replaces the panel.
       if (r.booking) setResult(r.booking);
       setPaid(!testBookings && isPay && r.view.status === "ok");
@@ -82,7 +101,7 @@ export function PayPanel({ testBookings = false }: { testBookings?: boolean }) {
       </p>
     );
   const v = session!.view;
-  const sameChoice = session!.transferId === transferId;
+  const sameChoice = session!.transferId === transferId && session!.extrasKey === pickedKey;
 
   return (
     <div className="space-y-3">
@@ -99,14 +118,14 @@ export function PayPanel({ testBookings = false }: { testBookings?: boolean }) {
           }
         />
       )}
-      {!sameChoice && <p className="text-xs text-muted">Du har ändrat transfer. Vi kontrollerar priset igen när du går vidare.</p>}
+      {!sameChoice && <p className="text-xs text-muted">Du har ändrat ditt val. Vi kontrollerar priset igen när du går vidare.</p>}
       {Object.keys(errors).length > 0 && <p className="text-xs font-bold text-danger">Kontrollera resenärsuppgifterna: {Object.keys(errors).length} fält behöver rättas.</p>}
 
       {(v.status === "ok" || !sameChoice) && !paid && (
         <button
           type="button"
           disabled={pending}
-          onClick={() => run(() => (testBookings ? bookAction : payAction)(session!.ref, transferId, booking), true)}
+          onClick={() => run(() => (testBookings ? bookAction : payAction)(session!.ref, transferId, picks, booking), true)}
           className={btn}
         >
           {pending ? <Loader2 className="size-5 animate-spin" aria-hidden /> : null}
@@ -134,7 +153,12 @@ export function PayPanel({ testBookings = false }: { testBookings?: boolean }) {
           Visa andra alternativ
         </Link>
       )}
-      {sameChoice && v.status === "soldout" && !v.soldOutHref && transfer && (
+      {sameChoice && v.status === "soldout" && v.soldOutWhat === "extras" && extras.length > 0 && (
+        <button type="button" className={btn} onClick={() => setExtras([])}>
+          Fortsätt utan tillval
+        </button>
+      )}
+      {sameChoice && v.status === "soldout" && !v.soldOutHref && v.soldOutWhat !== "extras" && transfer && (
         <button type="button" className={btn} onClick={() => setTransfer(null)}>
           Fortsätt utan transfer
         </button>

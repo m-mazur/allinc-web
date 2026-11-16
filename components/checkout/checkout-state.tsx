@@ -10,6 +10,9 @@ import type { BookingInput, Errors } from "@/lib/travellers";
 
 export type ChosenTransfer = { id: string; title: string; price: Price } | null;
 
+/** An extra bag or seat the customer picked: the API's id, how many, and the price per unit it showed. */
+export type ChosenExtra = { id: string; quantity: number; price: Price; label: string };
+
 export type CheckoutViewClient = {
   status: "ok" | "changed" | "soldout" | "cannotconfirm" | "expired" | "busy";
   title: string;
@@ -20,6 +23,7 @@ export type CheckoutViewClient = {
   secondsLeft: number | null;
   lines: { label: string; status: "ok" | "changed" | "soldout" | "unknown"; price: Price; previousPrice: Price | null; changes: string[] }[];
   soldOutHref: string | null;
+  soldOutWhat: string | null;
   canPay: boolean;
 };
 
@@ -33,12 +37,15 @@ export type BookingResultClient = {
   isTest: boolean;
 };
 
-/** A price check plus the sealed ref to continue it, and which transfer (sealed id) it covers. */
-export type Session = { view: CheckoutViewClient; ref: string; transferId: string | null };
+/** A price check plus the sealed ref to continue it, and which transfer (sealed id) and extras (extrasKey) it covers. */
+export type Session = { view: CheckoutViewClient; ref: string; transferId: string | null; extrasKey: string };
 
 type Ctx = {
   transfer: ChosenTransfer;
   setTransfer: (t: ChosenTransfer) => void;
+  /** Extra bags and seats picked; priced live with the airline at "Till betalning". */
+  extras: ChosenExtra[];
+  setExtras: (e: ChosenExtra[]) => void;
   session: Session | null;
   setSession: (s: Session) => void;
   /** true until the first check has come back */
@@ -55,6 +62,7 @@ const blankTraveller = { gender: "" as const, givenName: "", familyName: "", bor
 
 export function CheckoutState({ travellers, children }: { travellers: number; children: ReactNode }) {
   const [transfer, setTransfer] = useState<ChosenTransfer>(null);
+  const [extras, setExtras] = useState<ChosenExtra[]>([]);
   const [session, setSessionState] = useState<Session | null>(null);
   const [booking, setBooking] = useState<BookingInput>(() => ({
     travellers: Array.from({ length: travellers }, () => ({ ...blankTraveller })),
@@ -64,7 +72,7 @@ export function CheckoutState({ travellers, children }: { travellers: number; ch
   }));
   const [errors, setErrors] = useState<Errors>({});
   return (
-    <C.Provider value={{ transfer, setTransfer, session, setSession: setSessionState, checking: session === null, booking, setBooking, errors, setErrors }}>
+    <C.Provider value={{ transfer, setTransfer, extras, setExtras, session, setSession: setSessionState, checking: session === null, booking, setBooking, errors, setErrors }}>
       {children}
     </C.Provider>
   );

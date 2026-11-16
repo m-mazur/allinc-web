@@ -6,7 +6,10 @@
   test-mode note.
 - `checkout/`: client state (chosen transfer + latest price check, `checkout-state.tsx`),
   `SessionInit` (hands the server's first check to the client), `CheckoutTotal` + `PayPanel`
-  (status box and buttons calling the server actions), transfer picker, `TravellerForm` (traveller
+  (status box and buttons calling the server actions), transfer picker, `ExtrasPicker` (extra bags per
+  traveller and journey, a seat map per flight with one pill per seated traveller; chosen extras live
+  in the checkout state as `{id, quantity, price, label}`, `Session.extrasKey` says which choice the
+  last check covers, `lib/extras.ts`), `TravellerForm` (traveller
   details the suppliers need; rules in `lib/travellers.ts`, sources in `docs/BOOKING-DATA.md`;
   personal data stays in memory, never storage or URLs; phone numbers are checked with
   `libphonenumber-js`, default country = the brand's market). `sold-out-note.tsx`: the

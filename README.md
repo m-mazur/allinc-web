@@ -5,7 +5,7 @@ TypeScript, Tailwind 4. Talks to `allinc-api` (the `allinc` repo) from the serve
 Design and decisions: [FOUNDATION.md](FOUNDATION.md).
 
 Built so far: search form -> results -> offer page (swap room or flight) -> checkout, where the
-transfer suggestion streams in and the package is price-checked live with the suppliers through the
+transfer options and the airline's extra bags and seats stream in and the package is price-checked live with the suppliers through the
 API's `/checkout` routes (Ok / changed price / sold out / could not confirm / expired). There is no
 payment step. With `ALLINC_TEST_BOOKINGS=1` the checkout's "Boka testresa" books the trip on the
 suppliers' test systems through the API (`POST /checkout/{id}/book`); otherwise nothing is booked.
@@ -39,7 +39,7 @@ docker compose up --build
 |---|---|
 | `live` (default) | Calls `ALLINC_API_URL` |
 | `record` | Calls it and saves each response under `dev/fixtures` |
-| `replay` | Answers from `dev/fixtures`, never calls the API. Offer and transfer fall back to any recorded hotel; filters are not re-applied, room/flight swaps are. Checkout: `ALLINC_REPLAY_CHECKOUT` picks what "Till betalning" answers |
+| `replay` | Answers from `dev/fixtures`, never calls the API. Offer and transfer fall back to any recorded hotel; filters are not re-applied, room/flight swaps are. Checkout: `ALLINC_REPLAY_CHECKOUT` picks what "Till betalning" answers; `ALLINC_REPLAY_EXTRAS` (empty, `none`, `gone`) the bags and seats |
 
 ## Security model
 

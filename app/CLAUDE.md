@@ -8,7 +8,7 @@ header, so the brand segment is never chosen by the visitor. Paths are Swedish.
 | `[brand]/page.tsx` | Home: hero, search form, featured destinations | reference data |
 | `[brand]/sok` | Results. Filters, sort, paging are links (searchParams) | `search`, then `content` streamed in for card photos |
 | `[brand]/resa/[ref]` | One hotel's offer: winning package, rooms and flights as +/- deltas, swaps | `offer` + `content` in parallel |
-| `[brand]/kassa/[ref]` | Checkout: live price check, no payment yet | `offer`; then in one Suspense `transfers` → `POST /checkout` with the suggested transfer. Buttons are server actions in `lib/actions/checkout.ts` |
+| `[brand]/kassa/[ref]` | Checkout: transfer, extra bags and seats, live price check, no payment yet | `offer`; then `POST /checkout` (no transfer) starts at once and is shared by two Suspense parts: `transfers` (hands the check to the client) and `GET /checkout/{id}/extras` once the check has a session. Buttons are server actions in `lib/actions/checkout.ts` |
 | `bild/[token]` | Image proxy: unseals the URL, allowlisted hosts only, else 404 | supplier image host |
 
 ## Rules
@@ -28,6 +28,13 @@ header, so the brand segment is never chosen by the visitor. Paths are Swedish.
   SoldOut: link to the offer (`?slutsalt=flyg|rum`) or results (`?slutsalt=hotell`), which show
   `SoldOutNote`; a sold-out transfer stays in checkout. Expired / CannotConfirm / busy: "Kontrollera
   priset igen" (`recheckAction`). Payment itself is not built: an Ok after "Till betalning" says so.
+- **Flight extras** (2026-11-16): extra bags and paid seats the airline sells for the checked flight
+  ("Bagage och sittplatser", hidden when it sells none). Nothing is chosen at the start, so the total is
+  the offer price. Prices are per unit and shown as "+price"; the summary adds them as a preview until
+  "Till betalning", which first sets the choice on the session (`PUT /checkout/{id}/extras`, priced live
+  with the airline) and then revalidates. If a chosen bag or seat is gone, checkout stays put: the picker
+  reloads what is sold now (`extrasAction`), drops the gone items, says which, and the customer chooses
+  again or continues without ("Fortsätt utan tillval"). Seats only for travellers with a seat (not infants).
 - Price hold countdown: shown while a check is Ok or Changed, from `secondsLeft` worked out on the
   server (not the device clock); amber under 5 minutes; at zero the client marks the check expired and
   offers "Kontrollera priset igen". The hold is the API session: 20 minutes from the check, or less if

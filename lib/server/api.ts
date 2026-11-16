@@ -2,6 +2,7 @@ import "server-only";
 import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { env } from "./env";
+import { syntheticExtras } from "./replay-extras";
 
 // Typed client for allinc-api. One function per PUBLIC route, nothing else: the site never calls
 // /ops, /hotels/search, /flights/* or any other internal route. Raw responses carry fields the
@@ -176,9 +177,33 @@ export type RawCheckout = {
   checkedAt: string;
   expiresAt: string;
   checksLeft: number;
-  lines: { product: "Flight" | "Hotel" | "Transfer"; status: "Confirmed" | "Changed" | "SoldOut" | "CannotConfirm"; price: Money; previousPrice: Money | null; changes: string[] }[];
-  soldOut: { what: "flight" | "room" | "hotel" | "transfer"; redirect: "offer" | "results" | "checkout"; hotelKey: string | null; alsoSoldOut: string[] } | null;
+  lines: { product: "Flight" | "Hotel" | "Transfer" | "Extras"; status: "Confirmed" | "Changed" | "SoldOut" | "CannotConfirm"; price: Money; previousPrice: Money | null; changes: string[] }[];
+  soldOut: { what: "flight" | "room" | "hotel" | "transfer" | "extras"; redirect: "offer" | "results" | "checkout"; hotelKey: string | null; alsoSoldOut: string[] } | null;
 };
+
+/**
+ * GET /checkout/{id}/extras: the flight's extra bags and paid seats, customer prices. Ids are the API's own
+ * opaque hashes (no supplier data); the API accepts only ids it showed this checkout.
+ * passenger = index in the traveller form (adults, then children as searched).
+ */
+export type RawExtras = {
+  checkoutId: string;
+  currency: string;
+  available: boolean;
+  passengers: { index: number; type: "Adult" | "Child"; age: number | null; seat: boolean }[];
+  journeys: { index: number; origin: string; destination: string; departsLocal: string }[];
+  bags: { id: string; passenger: number; journeys: number[]; kind: string; maxWeightKg: number | null; maxQuantity: number; price: Money }[];
+  seatMaps: {
+    journey: number;
+    flightNumber: string;
+    departsLocal: string;
+    origin: string;
+    destination: string;
+    cabins: { cabinClass: string | null; rows: { type: string; designator: string | null; disclosures: string[]; prices: { id: string; passenger: number; price: Money }[] }[][][] }[];
+  }[];
+  selected: ExtraChoice[];
+};
+export type ExtraChoice = { id: string; quantity: number };
 export type CheckoutChoice = { q: SearchQuery; f: SearchFilters; market: string; hotel: string; flight?: string; room?: string; transfer?: string | null };
 
 /** A test booking made from a checked checkout (POST /checkout/{id}/book). Public shape: no supplier data. */
@@ -204,7 +229,8 @@ export class ApiError extends Error {
     public status: number,
     public kind:
       | "NotFound" | "SourcesFailed" | "BadRequest" | "Unavailable" | "TooManyChecks" | "TotalMismatch" | "Unauthorized"
-      | "NotBookable" | "InvalidTravellers" | "BookingDisabled",
+      | "NotBookable" | "InvalidTravellers" | "BookingDisabled"
+      | "NotPossible" | "ExtrasUnavailable" | "BadExtras",
   ) {
     super(`allinc-api ${status} ${kind}`);
   }
@@ -358,13 +384,18 @@ async function get<T>(route: string, p: Params, timeoutMs = 45_000): Promise<T> 
 
 // Replay checkout: statuses come from dev/fixtures/checkout, amounts from the recorded offer and
 // transfer fixtures for the chosen hotel, so checkout matches what the offer page showed.
-let replayLast: { hotel?: string; flight?: string | null; room?: string | null; transfer?: string | null } = {};
+let replayLast: { hotel?: string; flight?: string | null; room?: string | null; transfer?: string | null; adults?: number; childAges?: number[] } = {};
+// Replay extras: what the last PUT chose, priced from the synthetic extras (replay-extras.ts).
+let replayExtras: { choice: ExtraChoice[]; amount: number; row1Gone?: boolean } = { choice: [], amount: 0 };
 
 async function replayCheckout(route: string, body: unknown): Promise<RawCheckout> {
   // revalidate-<scenario>.json answers "Till betalning": ALLINC_REPLAY_CHECKOUT = ok | changed |
   // soldout-flight | soldout-room | soldout-hotel | soldout-transfer | cannotconfirm | expired.
   await new Promise((r) => setTimeout(r, 1200));
-  if (route === "/checkout") replayLast = body as typeof replayLast;
+  if (route === "/checkout") {
+    replayLast = body as typeof replayLast;
+    replayExtras = { choice: [], amount: 0 };
+  }
   const dir = path.join(env.fixturesDir, "checkout");
   const read = async (f: string) => JSON.parse(await readFile(path.join(dir, f), "utf8")) as RawCheckout;
 
@@ -385,6 +416,8 @@ async function replayCheckout(route: string, body: unknown): Promise<RawCheckout
         const bump = l.previousPrice ? l.price.amount - l.previousPrice.amount : 0; // the fixture's price change
         return { ...l, price: { ...base, amount: base.amount + bump }, previousPrice: l.previousPrice ? base : null };
       });
+    if (replayExtras.choice.length && r.status !== "SoldOut")
+      lines.push({ product: "Extras", status: "Confirmed", price: { amount: replayExtras.amount, currency: r.currency }, previousPrice: null, changes: [] });
     const total = lines.reduce((n, l) => n + l.price.amount, 0);
     const prev = lines.reduce((n, l) => n + (l.previousPrice ?? l.price).amount, 0);
     // Hold as the API sets it: 20 minutes from this check (the fixtures' own times are placeholders).
@@ -400,6 +433,20 @@ async function replayCheckout(route: string, body: unknown): Promise<RawCheckout
     };
   };
 
+  if (route.endsWith("/extras")) {
+    const extras = await replayExtrasView(route.split("/")[2]);
+    const prices = new Map<string, number>();
+    extras.bags.forEach((b) => prices.set(b.id, b.price.amount));
+    extras.seatMaps.forEach((m) => m.cabins.forEach((c) => c.rows.forEach((r) => r.forEach((sec) => sec.forEach((e) => e.prices.forEach((p) => prices.set(p.id, p.price.amount)))))));
+    const choice = (body as { items: ExtraChoice[] }).items;
+    if (process.env.ALLINC_REPLAY_EXTRAS === "gone" && !replayExtras.row1Gone && choice.some((c) => /^xs\d\d1[A-F]p/.test(c.id))) {
+      replayExtras = { ...replayExtras, row1Gone: true };
+      throw new ApiError(409, "ExtrasUnavailable");
+    }
+    if (choice.some((c) => !prices.has(c.id))) throw new ApiError(400, "BadExtras");
+    replayExtras = { ...replayExtras, choice, amount: choice.reduce((n, c) => n + prices.get(c.id)! * c.quantity, 0) };
+    return fit(await read("start.json"));
+  }
   if (route.endsWith("/revalidate")) return fit(await read(`revalidate-${process.env.ALLINC_REPLAY_CHECKOUT ?? "ok"}.json`));
   const start = fit(await read("start.json"));
   if (route.endsWith("/confirm")) {
@@ -435,6 +482,55 @@ async function getCheckout(id: string): Promise<RawCheckout> {
   }).catch(() => null);
   if (!res) throw new ApiError(503, "Unavailable");
   return checkoutResponse(res);
+}
+
+/** Replay: extras made up from the recorded offer's selected flight (dev only, see replay-extras.ts). */
+async function replayExtrasView(id: string): Promise<RawExtras> {
+  const recorded = ((await replay("/packages/offer", { hotel: replayLast.hotel })) as { data: RawOffer }).data;
+  const offer = replaySwaps(recorded, { flight: replayLast.flight ?? undefined, room: replayLast.room ?? undefined });
+  const flight = offer.flights[offer.selected.flightToken];
+  return syntheticExtras(id, flight, replayLast.adults ?? 2, replayLast.childAges ?? [], replayExtras.choice, process.env.ALLINC_REPLAY_EXTRAS === "none", replayExtras.row1Gone);
+}
+
+async function getExtras(id: string): Promise<RawExtras> {
+  if (env.apiMode === "replay") {
+    await new Promise((r) => setTimeout(r, 800));
+    return replayExtrasView(id);
+  }
+  const res = await fetch(`${env.apiUrl}/checkout/${encodeURIComponent(id)}/extras`, {
+    cache: "no-store",
+    headers: { accept: "application/json", ...webKey() },
+    signal: AbortSignal.timeout(20_000),
+  }).catch(() => null);
+  if (!res) throw new ApiError(503, "Unavailable");
+  if (res.ok) return (await res.json()) as RawExtras;
+  throw new ApiError(res.status, await extrasErrorKind(res));
+}
+
+/** PUT /checkout/{id}/extras: the customer's bags and seats, priced live; answers the checkout. [] removes them. */
+async function putExtras(id: string, items: ExtraChoice[]): Promise<RawCheckout> {
+  if (env.apiMode === "replay") return replayCheckout(`/checkout/${id}/extras`, { items });
+  let res: Response;
+  try {
+    res = await fetch(`${env.apiUrl}/checkout/${encodeURIComponent(id)}/extras`, {
+      method: "PUT",
+      cache: "no-store",
+      headers: { "content-type": "application/json", accept: "application/json", ...webKey() },
+      body: JSON.stringify({ items }),
+      signal: AbortSignal.timeout(30_000),
+    });
+  } catch {
+    throw new ApiError(503, "Unavailable");
+  }
+  if (res.ok) return (await res.json()) as RawCheckout;
+  throw new ApiError(res.status, await extrasErrorKind(res));
+}
+
+/** Extras errors: 409 NotPossible | ExtrasUnavailable, 400 BadExtras, 429 TooManyChecks, 503 CannotConfirm, 404. */
+async function extrasErrorKind(res: Response): Promise<ApiError["kind"]> {
+  const err = ((await res.json().catch(() => null)) as { error?: string } | null)?.error;
+  if (err === "NotPossible" || err === "ExtrasUnavailable" || err === "BadExtras" || err === "TooManyChecks") return err;
+  return res.status === 404 ? "NotFound" : res.status === 401 ? "Unauthorized" : res.status === 503 ? "SourcesFailed" : "Unavailable";
 }
 
 const webKey = (): Record<string, string> => (env.webKey ? { "X-Allinc-Web-Key": env.webKey } : {});
@@ -517,6 +613,10 @@ export const api = {
     confirm: (id: string, total: number) => post(`/checkout/${encodeURIComponent(id)}/confirm`, { total }),
     /** TEST ONLY while there is no payment provider: books the checked package on the suppliers' test systems. */
     book: (id: string, body: BookingBody, idempotencyKey: string) => postBooking(id, body, idempotencyKey),
+    /** Extra bags and paid seats for the checkout's flight. From the API's cache; a miss asks the airline (free). */
+    extras: (id: string) => getExtras(id),
+    /** Sets the bags and seats; the airline prices them live. */
+    setExtras: (id: string, items: ExtraChoice[]) => putExtras(id, items),
   },
 };
 

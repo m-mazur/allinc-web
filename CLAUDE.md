@@ -16,7 +16,7 @@ browser ─▶ proxy.ts (Host → brand, rewrite to /<brand>/...)
         ─▶ app/[brand]/  home · sok (results) · resa/[ref] (offer) · kassa/[ref] (checkout)
               └▶ lib/server/api.ts (server-only, public API routes only) ─▶ allinc-api
               └▶ lib/server/view.ts (hand-picked public view models; the ONLY data pages get)
-              └▶ lib/server/checkout.ts + lib/actions/checkout.ts (live price check at checkout)
+              └▶ lib/server/checkout.ts + lib/actions/checkout.ts (live price check, extra bags and seats at checkout)
         ─▶ app/bild/[token]  image proxy for sealed supplier photo URLs
 ```
 

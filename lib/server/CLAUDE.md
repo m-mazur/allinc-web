@@ -3,7 +3,11 @@
 Every file starts with `import "server-only"`. Nothing here may be imported by a client component.
 
 - `api.ts`: typed client, **one function per public API route** (`destinations`, `airports`, `search`,
-  `content`, `offer`, `transfers`, `checkout.start|get|revalidate|confirm|book`). `book` (test
+  `content`, `offer`, `transfers`, `checkout.start|get|revalidate|confirm|book|extras|setExtras`).
+  `extras` = `GET /checkout/{id}/extras` (bags and seat maps, customer prices); `setExtras` = `PUT` the
+  choice, priced live, answers the checkout. Their errors: 409 `NotPossible` | `ExtrasUnavailable`, 400
+  `BadExtras`, 429, 503. Replay makes extras up from the recorded flight (`replay-extras.ts`;
+  `ALLINC_REPLAY_EXTRAS=none` sells none, `gone` sells out row 1 when chosen). `book` (test
   bookings only) sends the travellers once, Idempotency-Key = sha256(checkout id + "book"), 150 s
   timeout, never retried; replay answers `dev/fixtures/checkout/book-<ALLINC_REPLAY_BOOKING>.json`
   (confirmed | failed | attention). The API answers 200 for every outcome; Swedish copy comes from its
@@ -17,14 +21,17 @@ Every file starts with `import "server-only"`. Nothing here may be imported by a
   transfer fixtures for the chosen hotel, so they match the offer page): first check Ok, "Till betalning" per
   `ALLINC_REPLAY_CHECKOUT` = ok | changed | soldout-flight | soldout-room | soldout-hotel |
   soldout-transfer | cannotconfirm | expired).
-- `checkout.ts`: the checkout flow and its Swedish copy. Sealed checkout ref (`checkout.v1`: API
-  checkout id, trip, market, transfer, total last shown, 2 h). Transfer ids are sealed (`transfer.v1`).
+- `checkout.ts`: the checkout flow and its Swedish copy. Sealed checkout ref (`checkout.v2`: API
+  checkout id, trip, market, transfer, extras the session holds (`ex`), total last shown, 2 h).
+  Extras ids are the API's own opaque hashes (no supplier data), so they go to the browser unsealed;
+  the server re-cleans them (`cleanExtras`) and the API knows only ids it showed for that checkout.
+  `mapExtras` picks the public extras view (`ExtrasModel`). Transfer ids are sealed (`transfer.v1`).
   **Amounts never come from the browser**: confirm sends the total sealed when it was shown.
   New checks are limited (6/h per IP from X-Forwarded-For/X-Real-IP, 120/h total) to protect
   supplier quota; the same trip + transfer within the hour reuses the API session.
 - `view.ts`: public view models. Every field picked by hand. Supplier test airline code ZZ shows as
   "Testflyg". Image URLs become `/bild/<sealed>`.
-- `seal.ts`: AES-256-GCM sealed refs with a purpose string (`trip.v1`, `img.v1`, `checkout.v1`,
+- `seal.ts`: AES-256-GCM sealed refs with a purpose string (`trip.v1`, `img.v1`, `checkout.v2`,
   `transfer.v1`), 24 h expiry for trips.
   Bump the purpose version when a sealed shape changes.
 - `env.ts`: server-only settings. `testBookings` (`ALLINC_TEST_BOOKINGS=1`) turns on "Boka testresa". `reference.ts`, `search-params.ts`, `defaults.ts`: search inputs.
